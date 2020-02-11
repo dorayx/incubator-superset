@@ -31,6 +31,7 @@ RUN mkdir /app \
 
 # First, we just wanna install requirements, which will allow us to utilize the cache
 # in order to only build if and only if requirements change
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 COPY ./requirements.txt /app/
 RUN cd /app \
         && pip install --no-cache -r requirements.txt
@@ -110,6 +111,7 @@ FROM lean AS dev
 COPY ./requirements-dev.txt ./docker/requirements-extra.txt /app/
 
 USER root
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 RUN cd /app \
     && pip install --no-cache -r requirements-dev.txt -r requirements-extra.txt
 USER superset
