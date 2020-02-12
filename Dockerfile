@@ -51,9 +51,10 @@ RUN cd /app/superset-frontend \
 # Next, copy in the rest and let webpack do its thing
 COPY ./superset-frontend /app/superset-frontend
 # This is BY FAR the most expensive step (thanks Terser!)
-RUN cd /app/superset-frontend \
-        && npm run build \
-        && rm -rf node_modules
+# todo: too expensive to build
+# RUN cd /app/superset-frontend \
+#         && npm run build \
+#         && rm -rf node_modules
 
 
 ######################################################################
