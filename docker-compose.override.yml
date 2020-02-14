@@ -3,6 +3,8 @@ services:
   superset-node:
     image: node:10-jessie
     command: ["bash", "-c", "mkdir -p /app/superset-frontend && cd /app/superset-frontend && npm ci && npm run dev"]
+    ports:
+      - "9000:9000"
     env_file: docker/.env
     depends_on:
       - db

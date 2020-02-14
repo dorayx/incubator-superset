@@ -283,13 +283,14 @@ const config = {
     inline: true,
     stats: { colors: true },
     overlay: true,
+    host: '0.0.0.0',
     port: devserverPort,
     // Only serves bundled files from webpack-dev-server
     // and proxy everything else to Superset backend
     proxy: {
       context: () => true,
-      '/': `http://localhost:${supersetPort}`,
-      target: `http://localhost:${supersetPort}`,
+      '/': `http://superset:${supersetPort}`,
+      target: `http://superset:${supersetPort}`,
     },
     contentBase: path.join(process.cwd(), '../static/assets'),
   },
