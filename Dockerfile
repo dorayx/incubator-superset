@@ -31,7 +31,8 @@ RUN mkdir /app \
 
 # First, we just wanna install requirements, which will allow us to utilize the cache
 # in order to only build if and only if requirements change
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple \
+       && pip install --upgrade pip
 COPY ./requirements.txt /app/
 RUN cd /app \
         && pip install --no-cache -r requirements.txt
@@ -81,6 +82,9 @@ RUN useradd --user-group --no-create-home --no-log-init --shell /bin/bash supers
             libpq-dev \
         && rm -rf /var/lib/apt/lists/*
 
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple \
+       && pip install --upgrade pip
+
 COPY --from=superset-py /usr/local/lib/python3.6/site-packages/ /usr/local/lib/python3.6/site-packages/
 # Copying site-packages doesn't move the CLIs, so let's copy them one by one
 COPY --from=superset-py /usr/local/bin/gunicorn /usr/local/bin/celery /usr/local/bin/flask /usr/bin/
@@ -114,7 +118,8 @@ FROM lean AS dev
 COPY ./requirements-dev.txt ./docker/requirements-extra.txt /app/
 
 USER root
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple \
+       && pip install --upgrade pip
 RUN cd /app \
     && pip install --no-cache -r requirements-dev.txt -r requirements-extra.txt
 USER superset
