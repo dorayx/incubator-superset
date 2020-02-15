@@ -174,6 +174,7 @@ class SupersetAppInitializer:
             SqlLab,
         )
         from superset.views.tags import TagView
+        from superset.views.extended import ExtendedSuperset
 
         #
         # Setup API views
@@ -277,6 +278,7 @@ class SupersetAppInitializer:
         appbuilder.add_view_no_menu(TableModelView)
         appbuilder.add_view_no_menu(TableSchemaView)
         appbuilder.add_view_no_menu(TabStateView)
+        appbuilder.add_view_no_menu(ExtendedSuperset)
 
         if feature_flag_manager.is_feature_enabled("TAGGING_SYSTEM"):
             appbuilder.add_view_no_menu(TagView)
