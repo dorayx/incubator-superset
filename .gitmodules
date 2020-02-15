@@ -1,0 +1,3 @@
+[submodule "superset/examples/gzdata"]
+	path = superset/examples/gzdata
+	url = https://github.com/apache-superset/examples-data.git
