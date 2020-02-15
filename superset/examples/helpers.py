@@ -28,6 +28,7 @@ from superset.models import core as models
 from superset.models.slice import Slice
 
 BASE_URL = "https://github.com/apache-superset/examples-data/blob/master/"
+BASE_LOCAL_FILE = os.path.join(os.path.dirname(__file__), 'gzdata')
 
 # Shortcuts
 DB = models.Database
@@ -67,10 +68,29 @@ def get_slice_json(defaults, **kwargs):
     return json.dumps(d, indent=4, sort_keys=True)
 
 
-def get_example_data(filepath, is_gzip=True, make_bytes=False):
-    content = request.urlopen(f"{BASE_URL}{filepath}?raw=true").read()
+# todo: we cannot access github via china network without proxy
+def get_example_data(filepath, is_gzip=True, make_bytes=False, from_github=False):
+    if from_github:
+        return download_example_data(filepath, is_gzip, make_bytes)
+    else:
+        return read_example_data(filepath, is_gzip, make_bytes)
+
+
+def unzip_content(content, is_gzip=True, make_bytes=False):
     if is_gzip:
         content = zlib.decompress(content, zlib.MAX_WBITS | 16)
     if make_bytes:
         content = BytesIO(content)
     return content
+
+
+def download_example_data(filepath, is_gzip=True, make_bytes=False):
+    content = request.urlopen(f"{BASE_URL}{filepath}?raw=true").read()
+    return unzip_content(content, is_gzip, make_bytes)
+
+
+def read_example_data(filepath, is_gzip=True, make_bytes=False):
+    target_path = os.path.join(BASE_LOCAL_FILE, filepath)
+    with open(target_path, 'rb') as f:
+        content = f.read()
+        return unzip_content(content, is_gzip, make_bytes)
