@@ -22,11 +22,17 @@ import moment from 'moment';
 import PropTypes from 'prop-types';
 import React from 'react';
 // @ts-ignore
-import { Button, Modal, Panel } from 'react-bootstrap';
+import { Panel } from 'react-bootstrap';
 import ConfirmStatusChange from 'src/components/ConfirmStatusChange';
 import ListView from 'src/components/ListView/ListView';
-import { FetchDataConfig, FilterTypeMap } from 'src/components/ListView/types';
+import {
+  FetchDataConfig,
+  FilterOperatorMap,
+  Filters,
+} from 'src/components/ListView/types';
 import withToasts from 'src/messageToasts/enhancers/withToasts';
+import PropertiesModal, { Slice } from 'src/explore/components/PropertiesModal';
+import Chart from 'src/types/Chart';
 
 const PAGE_SIZE = 25;
 
@@ -36,25 +42,66 @@ interface Props {
 }
 
 interface State {
-  chartCount: number;
   charts: any[];
-  filterTypes: FilterTypeMap;
-  labelColumns: { [key: string]: string };
-  lastFetchDataConfig: FetchDataConfig | null;
+  chartCount: number;
   loading: boolean;
+  filterOperators: FilterOperatorMap;
+  filters: Filters;
+  owners: Array<{ text: string; value: number }>;
+  lastFetchDataConfig: FetchDataConfig | null;
   permissions: string[];
-}
-
-interface Chart {
-  changed_on: string;
-  creator: string;
-  id: number;
-  slice_name: string;
-  url: string;
-  viz_type: string;
+  // for now we need to use the Slice type defined in PropertiesModal.
+  // In future it would be better to have a unified Chart entity.
+  sliceCurrentlyEditing: Slice | null;
 }
 
 class ChartList extends React.PureComponent<Props, State> {
+  static propTypes = {
+    addDangerToast: PropTypes.func.isRequired,
+  };
+
+  state: State = {
+    chartCount: 0,
+    charts: [],
+    filterOperators: {},
+    filters: [],
+    lastFetchDataConfig: null,
+    loading: false,
+    owners: [],
+    permissions: [],
+    sliceCurrentlyEditing: null,
+  };
+
+  componentDidMount() {
+    Promise.all([
+      SupersetClient.get({
+        endpoint: `/api/v1/chart/_info`,
+      }),
+      SupersetClient.get({
+        endpoint: `/api/v1/chart/related/owners`,
+      }),
+    ]).then(
+      ([{ json: infoJson = {} }, { json: ownersJson = {} }]) => {
+        this.setState(
+          {
+            filterOperators: infoJson.filters,
+            owners: ownersJson.result,
+            permissions: infoJson.permissions,
+          },
+          this.updateFilters,
+        );
+      },
+      ([e1, e2]) => {
+        this.props.addDangerToast(t('An error occurred while fetching Charts'));
+        if (e1) {
+          console.error(e1);
+        }
+        if (e2) {
+          console.error(e2);
+        }
+      },
+    );
+  }
 
   get canEdit() {
     return this.hasPerm('can_edit');
@@ -64,40 +111,25 @@ class ChartList extends React.PureComponent<Props, State> {
     return this.hasPerm('can_delete');
   }
 
-  public static propTypes = {
-    addDangerToast: PropTypes.func.isRequired,
-  };
+  initialSort = [{ id: 'changed_on', desc: true }];
 
-  public state: State = {
-    chartCount: 0,
-    charts: [],
-    filterTypes: {},
-    labelColumns: {},
-    lastFetchDataConfig: null,
-    loading: false,
-    permissions: [],
-  };
-
-  public initialSort = [{ id: 'changed_on', desc: true }];
-
-  public columns = [
+  columns = [
     {
       Cell: ({
         row: {
-          original: { url, slice_name },
+          original: { url, slice_name: sliceName },
         },
-      }: any) => <a href={url}>{slice_name}</a>,
+      }: any) => <a href={url}>{sliceName}</a>,
       Header: t('Chart'),
       accessor: 'slice_name',
-      filterable: true,
       sortable: true,
     },
     {
       Cell: ({
         row: {
-          original: { viz_type },
+          original: { viz_type: vizType },
         },
-      }: any) => viz_type,
+      }: any) => vizType,
       Header: t('Visualization Type'),
       accessor: 'viz_type',
       sortable: true,
@@ -105,69 +137,87 @@ class ChartList extends React.PureComponent<Props, State> {
     {
       Cell: ({
         row: {
-          original: { datasource_name_text, datasource_link },
+          original: { datasource_name_text: dsNameTxt, datasource_url: dsUrl },
         },
-      }: any) => <a href={datasource_link}>{datasource_name_text}</a>,
+      }: any) => <a href={dsUrl}>{dsNameTxt}</a>,
       Header: t('Datasource'),
-      accessor: 'datasource_name_text',
+      accessor: 'datasource_name',
       sortable: true,
     },
     {
       Cell: ({
         row: {
-          original: { changed_by_name, changed_by_url },
+          original: {
+            changed_by_name: changedByName,
+            changed_by_url: changedByUrl,
+          },
         },
-      }: any) => <a href={changed_by_url}>{changed_by_name}</a>,
+      }: any) => <a href={changedByUrl}>{changedByName}</a>,
       Header: t('Creator'),
-      accessor: 'creator',
+      accessor: 'changed_by_fk',
       sortable: true,
     },
     {
       Cell: ({
         row: {
-          original: { changed_on },
+          original: { changed_on: changedOn },
         },
-      }: any) => (
-          <span className='no-wrap'>{moment(changed_on).fromNow()}</span>
-        ),
+      }: any) => <span className="no-wrap">{moment(changedOn).fromNow()}</span>,
       Header: t('Last Modified'),
       accessor: 'changed_on',
       sortable: true,
     },
     {
+      accessor: 'description',
+      hidden: true,
+    },
+    {
+      accessor: 'owners',
+      hidden: true,
+    },
+    {
       Cell: ({ row: { state, original } }: any) => {
         const handleDelete = () => this.handleChartDelete(original);
-        const handleEdit = () => this.handleChartEdit(original);
+        const openEditModal = () => this.openChartEditModal(original);
         if (!this.canEdit && !this.canDelete) {
           return null;
         }
 
         return (
-          <span className={`actions ${state && state.hover ? '' : 'invisible'}`}>
+          <span
+            className={`actions ${state && state.hover ? '' : 'invisible'}`}
+          >
             {this.canDelete && (
               <ConfirmStatusChange
                 title={t('Please Confirm')}
-                description={<>{t('Are you sure you want to delete')} <b>{original.slice_name}</b>?</>}
+                description={
+                  <>
+                    {t('Are you sure you want to delete')}{' '}
+                    <b>{original.slice_name}</b>?
+                  </>
+                }
                 onConfirm={handleDelete}
               >
-                {(confirmDelete) => (
+                {confirmDelete => (
                   <span
-                    role='button'
-                    className='action-button'
+                    role="button"
+                    tabIndex={0}
+                    className="action-button"
                     onClick={confirmDelete}
                   >
-                    <i className='fa fa-trash' />
+                    <i className="fa fa-trash" />
                   </span>
                 )}
               </ConfirmStatusChange>
             )}
             {this.canEdit && (
               <span
-                role='button'
-                className='action-button'
-                onClick={handleEdit}
+                role="button"
+                tabIndex={0}
+                className="action-button"
+                onClick={openEditModal}
               >
-                <i className='fa fa-pencil' />
+                <i className="fa fa-pencil" />
               </span>
             )}
           </span>
@@ -178,37 +228,61 @@ class ChartList extends React.PureComponent<Props, State> {
     },
   ];
 
-  public hasPerm = (perm: string) => {
+  hasPerm = (perm: string) => {
     if (!this.state.permissions.length) {
       return false;
     }
 
-    return this.state.permissions.some((p) => p === perm);
-  }
+    return this.state.permissions.some(p => p === perm);
+  };
 
-  public handleChartEdit = ({ id }: { id: number }) => {
-    window.location.assign(`/chart/edit/${id}`);
-  }
+  openChartEditModal = (chart: Chart) => {
+    this.setState({
+      sliceCurrentlyEditing: {
+        slice_id: chart.id,
+        slice_name: chart.slice_name,
+        description: chart.description,
+        cache_timeout: chart.cache_timeout,
+      },
+    });
+  };
 
-  public handleChartDelete = ({ id, slice_name }: Chart) => {
+  closeChartEditModal = () => {
+    this.setState({ sliceCurrentlyEditing: null });
+  };
+
+  handleChartUpdated = (edits: Chart) => {
+    // update the chart in our state with the edited info
+    const newCharts = this.state.charts.map(chart =>
+      chart.id === edits.id ? { ...chart, ...edits } : chart,
+    );
+    this.setState({
+      charts: newCharts,
+    });
+  };
+
+  handleChartDelete = ({ id, slice_name: sliceName }: Chart) => {
     SupersetClient.delete({
       endpoint: `/api/v1/chart/${id}`,
     }).then(
-      (resp) => {
+      () => {
         const { lastFetchDataConfig } = this.state;
         if (lastFetchDataConfig) {
           this.fetchData(lastFetchDataConfig);
         }
-        this.props.addSuccessToast(t('Deleted: %(slice_name)', slice_name));
+        this.props.addSuccessToast(t('Deleted: %s', sliceName));
       },
-      (err: any) => {
-        this.props.addDangerToast(t('There was an issue deleting: %(slice_name)', slice_name));
+      () => {
+        this.props.addDangerToast(
+          t('There was an issue deleting: %s', sliceName),
+        );
       },
     );
-  }
-  public handleBulkDashboardDelete = (charts: Chart[]) => {
+  };
+
+  handleBulkChartDelete = (charts: Chart[]) => {
     SupersetClient.delete({
-      endpoint: `/api/v1/dashboard/?q=!(${charts.map(({ id }) => id).join(',')})`,
+      endpoint: `/api/v1/chart/?q=!(${charts.map(({ id }) => id).join(',')})`,
     }).then(
       ({ json = {} }) => {
         const { lastFetchDataConfig } = this.state;
@@ -219,22 +293,28 @@ class ChartList extends React.PureComponent<Props, State> {
       },
       (err: any) => {
         console.error(err);
-        this.props.addDangerToast(t('There was an issue deleting the selected dashboards'));
+        this.props.addDangerToast(
+          t('There was an issue deleting the selected charts'),
+        );
       },
     );
-  }
+  };
 
-  public fetchData = ({
-    pageIndex,
-    pageSize,
-    sortBy,
-    filters,
-  }: FetchDataConfig) => {
-    this.setState({ loading: true });
-    const filterExps = Object.keys(filters).map((fk) => ({
-      col: fk,
-      opr: filters[fk].filterId,
-      value: filters[fk].filterValue,
+  fetchData = ({ pageIndex, pageSize, sortBy, filters }: FetchDataConfig) => {
+    // set loading state, cache the last config for fetching data in this component.
+    this.setState({
+      lastFetchDataConfig: {
+        filters,
+        pageIndex,
+        pageSize,
+        sortBy,
+      },
+      loading: true,
+    });
+    const filterExps = filters.map(({ id: col, operator: opr, value }) => ({
+      col,
+      opr,
+      value,
     }));
 
     const queryParams = JSON.stringify({
@@ -249,66 +329,119 @@ class ChartList extends React.PureComponent<Props, State> {
       endpoint: `/api/v1/chart/?q=${queryParams}`,
     })
       .then(({ json = {} }) => {
-        this.setState({ charts: json.result, chartCount: json.count, labelColumns: json.label_columns });
+        this.setState({ charts: json.result, chartCount: json.count });
       })
       .catch(() => {
-        this.props.addDangerToast(
-          t('An error occurred while fetching Charts'),
-        );
+        this.props.addDangerToast(t('An error occurred while fetching Charts'));
       })
       .finally(() => {
         this.setState({ loading: false });
       });
-  }
+  };
 
-  public componentDidMount() {
-    SupersetClient.get({
-      endpoint: `/api/v1/chart/_info`,
-    })
-      .then(({ json = {} }) => {
-        this.setState({ filterTypes: json.filters, permissions: json.permissions });
-      });
-  }
+  updateFilters = () => {
+    const { filterOperators, owners } = this.state;
+    const convertFilter = ({
+      name: label,
+      operator,
+    }: {
+      name: string;
+      operator: string;
+    }) => ({ label, value: operator });
 
-  public render() {
-    const { charts, chartCount, loading, filterTypes } = this.state;
+    this.setState({
+      filters: [
+        {
+          Header: 'Chart',
+          id: 'slice_name',
+          operators: filterOperators.slice_name.map(convertFilter),
+        },
+        {
+          Header: 'Description',
+          id: 'description',
+          operators: filterOperators.slice_name.map(convertFilter),
+        },
+        {
+          Header: 'Visualization Type',
+          id: 'viz_type',
+          operators: filterOperators.viz_type.map(convertFilter),
+        },
+        {
+          Header: 'Datasource Name',
+          id: 'datasource_name',
+          operators: filterOperators.datasource_name.map(convertFilter),
+        },
+        {
+          Header: 'Owners',
+          id: 'owners',
+          input: 'select',
+          operators: filterOperators.owners.map(convertFilter),
+          selects: owners.map(({ text: label, value }) => ({ label, value })),
+        },
+      ],
+    });
+  };
+
+  render() {
+    const {
+      charts,
+      chartCount,
+      loading,
+      filters,
+      sliceCurrentlyEditing,
+    } = this.state;
     return (
-      <div className='container welcome'>
+      <div className="container welcome">
         <Panel>
-
-          <ConfirmStatusChange
-            title={t('Please confirm')}
-            description={t('Are you sure you want to delete the selected charts?')}
-            onConfirm={this.handleBulkDashboardDelete}
-          >
-            {(confirmDelete) => {
-              const bulkActions = [];
-              if (this.canDelete) {
-                bulkActions.push({
-                  key: 'delete',
-                  name: <><i className='fa fa-trash' /> Delete</>,
-                  onSelect: confirmDelete,
-                });
-              }
-              return (
-                <ListView
-                  className='chart-list-view'
-                  title={'Charts'}
-                  columns={this.columns}
-                  data={charts}
-                  count={chartCount}
-                  pageSize={PAGE_SIZE}
-                  fetchData={this.fetchData}
-                  loading={loading}
-                  initialSort={this.initialSort}
-                  filterTypes={filterTypes}
-                  bulkActions={bulkActions}
-                />
-              );
-            }}
-          </ConfirmStatusChange>
+          <Panel.Body>
+            {sliceCurrentlyEditing && (
+              <PropertiesModal
+                show
+                onHide={this.closeChartEditModal}
+                onSave={this.handleChartUpdated}
+                slice={sliceCurrentlyEditing}
+              />
+            )}
+            <ConfirmStatusChange
+              title={t('Please confirm')}
+              description={t(
+                'Are you sure you want to delete the selected charts?',
+              )}
+              onConfirm={this.handleBulkChartDelete}
+            >
+              {confirmDelete => {
+                const bulkActions = [];
+                if (this.canDelete) {
+                  bulkActions.push({
+                    key: 'delete',
+                    name: (
+                      <>
+                        <i className="fa fa-trash" /> Delete
+                      </>
+                    ),
+                    onSelect: confirmDelete,
+                  });
+                }
+                return (
+                  <ListView
+                    className="chart-list-view"
+                    title={'Charts'}
+                    columns={this.columns}
+                    data={charts}
+                    count={chartCount}
+                    pageSize={PAGE_SIZE}
+                    fetchData={this.fetchData}
+                    loading={loading}
+                    initialSort={this.initialSort}
+                    filters={filters}
+                    bulkActions={bulkActions}
+                  />
+                );
+              }}
+            </ConfirmStatusChange>
+          </Panel.Body>
         </Panel>
-      </div >
+      </div>
     );
   }
 }

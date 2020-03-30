@@ -69,7 +69,7 @@ Superset provides:
     create interactive dashboards.
 * A wide array of beautiful visualizations to showcase your data.
 * Easy, code-free, user flows to drill down and slice and dice the data
-    underlying exposed dashboards. The dashboards and charts acts as a starting
+    underlying exposed dashboards. The dashboards and charts act as a starting
     point for deeper analysis.
 * A state of the art SQL editor/IDE exposing a rich metadata browser, and
     an easy workflow to create visualizations out of any result set.
@@ -88,31 +88,10 @@ Superset provides:
 Database Support
 ----------------
 
-Superset speaks many SQL dialects through SQLAlchemy, a Python
-ORM that is compatible with
-[most common databases](https://docs.sqlalchemy.org/en/rel_1_2/core/engines.html).
-
-A list of currently supported SQL databases can be found
+Superset speaks many SQL dialects through SQLAlchemy - a Python
+SQL toolkit that is compatible with most databases. A list of
+supported databases can be found
 [here](https://superset.incubator.apache.org/#databases).
-
-Apache Druid (Incubating)!
-------
-
-On top of having the ability to query your relational databases,
-Superset ships with deep integration with Druid (a real time distributed
-column-store). When querying Druid,
-Superset can query humongous amounts of data on top of real time dataset.
-Note that Superset does not require Druid in any way to function, it's simply
-another database backend that it can query.
-
-Here's a description of Druid from the http://druid.io website:
-
-*Druid is an open-source analytics data store designed for
-business intelligence (OLAP) queries on event data. Druid provides low
-latency (real-time) data ingestion, flexible data exploration,
-and fast data aggregation. Existing Druid deployments have scaled to
-trillions of events and petabytes of data. Druid is best used to
-power analytic dashboards and applications.*
 
 
 Installation & Configuration
@@ -128,20 +107,19 @@ Resources
 * [Slides from Strata (March 2016)](https://drive.google.com/open?id=0B5PVE0gzO81oOVJkdF9aNkJMSmM)
 * [Stackoverflow tag](https://stackoverflow.com/questions/tagged/apache-superset)
 * [Join our Slack](https://join.slack.com/t/apache-superset/shared_invite/enQtNDMxMDY5NjM4MDU0LWJmOTcxYjlhZTRhYmEyYTMzOWYxOWEwMjcwZDZiNWRiNDY2NDUwNzcwMDFhNzE1ZmMxZTZlZWY0ZTQ2MzMyNTU)
-* [DEPRECATED Google Group](https://groups.google.com/forum/#!forum/airbnb_superset)
 
 
 Contributing
 ------------
 
 Interested in contributing? Casual hacking? Check out
-[Contributing.MD](https://github.com/apache/incubator-superset/blob/master/CONTRIBUTING.md)
+[Contributing.MD](https://github.com/apache/superset/blob/master/CONTRIBUTING.md)
 
 
 Who uses Apache Superset (incubating)?
 --------------------------------------
 
-Here's a list of organizations who have taken the time to send a PR to let
+Here's a list of organizations that have taken the time to send a PR to let
 the world know they are using Superset. Join our growing community!
 
  1. [6play](https://www.6play.fr)
@@ -180,6 +158,7 @@ the world know they are using Superset. Join our growing community!
  1. [komoot](https://www.komoot.com/)
  1. [Konfío](http://konfio.mx)
  1. [Kuaishou](https://www.kuaishou.com/)
+ 1. [Let's Roam](https://www.letsroam.com/)
  1. [Lime](https://www.limebike.com/)
  1. [Living Goods](https://www.livinggoods.org)
  1. [Lyft](https://www.lyft.com/)
@@ -192,8 +171,10 @@ the world know they are using Superset. Join our growing community!
  1. [Popoko VM Games Studio](https://popoko.live)
  1. [Preset, Inc.](https://preset.io)
  1. [Pronto Tools](http://www.prontotools.io)
+ 1. [PubNub](https://pubnub.com)
  1. [QPID Health](http://www.qpidhealth.com/)
  1. [Qunar](https://www.qunar.com/)
+ 1. [Rakuten Viki](https://www.viki.com)
  1. [Reward Gateway](https://www.rewardgateway.com)
  1. [Safaricom](https://www.safaricom.co.ke/)
  1. [Scoot](https://scoot.co/)

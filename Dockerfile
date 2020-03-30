@@ -43,11 +43,16 @@ RUN cd /app \
 ######################################################################
 FROM node:10-jessie AS superset-node
 
+ARG NPM_BUILD_CMD="build"
+ENV BUILD_CMD=${NPM_BUILD_CMD}
+
 # NPM ci first, as to NOT invalidate previous steps except for when package.json changes
 RUN mkdir -p /app/superset-frontend
 RUN mkdir -p /app/superset/assets
+COPY ./docker/frontend-mem-nag.sh /
 COPY ./superset-frontend/package* /app/superset-frontend/
-RUN cd /app/superset-frontend \
+RUN /frontend-mem-nag.sh \
+        && cd /app/superset-frontend \
         && npm ci
 
 # Next, copy in the rest and let webpack do its thing
@@ -55,9 +60,8 @@ COPY ./superset-frontend /app/superset-frontend
 # This is BY FAR the most expensive step (thanks Terser!)
 # todo: build:noterser to reduce cost of assets compile
 RUN cd /app/superset-frontend \
-     && npm run build:noterser \
-     && rm -rf node_modules
-
+        && npm run ${BUILD_CMD} \
+        && rm -rf node_modules
 
 ######################################################################
 # Final lean image...
@@ -115,11 +119,12 @@ ENTRYPOINT ["/usr/bin/docker-entrypoint.sh"]
 ######################################################################
 FROM lean AS dev
 
-COPY ./requirements-dev.txt ./docker/requirements-extra.txt /app/
+COPY ./requirements-dev.txt ./docker/requirements* /app/
 
 USER root
 RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple \
        && pip install --upgrade pip
 RUN cd /app \
-    && pip install --no-cache -r requirements-dev.txt -r requirements-extra.txt
+    && pip install --no-cache -r requirements-dev.txt -r requirements-extra.txt \
+    && pip install --no-cache -r requirements-local.txt || true
 USER superset

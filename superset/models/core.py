@@ -139,6 +139,7 @@ class Database(
     encrypted_extra = Column(EncryptedType(Text, config["SECRET_KEY"]), nullable=True)
     perm = Column(String(1000))
     impersonate_user = Column(Boolean, default=False)
+    server_cert = Column(EncryptedType(Text, config["SECRET_KEY"]), nullable=True)
     export_fields = [
         "database_name",
         "sqlalchemy_uri",
@@ -278,7 +279,7 @@ class Database(
         schema: Optional[str] = None,
         nullpool: bool = True,
         user_name: Optional[str] = None,
-        source: Optional[int] = None,
+        source: Optional[utils.QuerySource] = None,
     ) -> Engine:
         extra = self.get_extra()
         sqlalchemy_url = make_url(self.sqlalchemy_uri_decrypted)
@@ -292,7 +293,7 @@ class Database(
         )
 
         masked_url = self.get_password_masked_url(sqlalchemy_url)
-        logger.info("Database.get_sqla_engine(). Masked URL: %s", str(masked_url))
+        logger.debug("Database.get_sqla_engine(). Masked URL: %s", str(masked_url))
 
         params = extra.get("engine_params", {})
         if nullpool:
@@ -309,11 +310,20 @@ class Database(
         )
         if configuration:
             connect_args["configuration"] = configuration
+        if connect_args:
             params["connect_args"] = connect_args
 
         params.update(self.get_encrypted_extra())
 
         if DB_CONNECTION_MUTATOR:
+            if not source and request and request.referrer:
+                if "/superset/dashboard/" in request.referrer:
+                    source = utils.QuerySource.DASHBOARD
+                elif "/superset/explore/" in request.referrer:
+                    source = utils.QuerySource.CHART
+                elif "/superset/sqllab/" in request.referrer:
+                    source = utils.QuerySource.SQL_LAB
+
             sqlalchemy_url, params = DB_CONNECTION_MUTATOR(
                 sqlalchemy_url, params, effective_username, security_manager, source
             )
@@ -330,15 +340,8 @@ class Database(
         self, sql: str, schema: Optional[str] = None, mutator: Optional[Callable] = None
     ) -> pd.DataFrame:
         sqls = [str(s).strip(" ;") for s in sqlparse.parse(sql)]
-        source_key = None
-        if request and request.referrer:
-            if "/superset/dashboard/" in request.referrer:
-                source_key = "dashboard"
-            elif "/superset/explore/" in request.referrer:
-                source_key = "chart"
-        engine = self.get_sqla_engine(
-            schema=schema, source=utils.sources[source_key] if source_key else None
-        )
+
+        engine = self.get_sqla_engine(schema=schema)
         username = utils.get_username()
 
         def needs_conversion(df_series: pd.Series) -> bool:
@@ -398,9 +401,7 @@ class Database(
         cols: Optional[List[Dict[str, Any]]] = None,
     ):
         """Generates a ``select *`` statement in the proper dialect"""
-        eng = self.get_sqla_engine(
-            schema=schema, source=utils.sources.get("sql_lab", None)
-        )
+        eng = self.get_sqla_engine(schema=schema, source=utils.QuerySource.SQL_LAB)
         return self.db_engine_spec.select_star(
             self,
             table_name,
@@ -556,14 +557,7 @@ class Database(
         return self.db_engine_spec.get_time_grains()
 
     def get_extra(self) -> Dict[str, Any]:
-        extra: Dict[str, Any] = {}
-        if self.extra:
-            try:
-                extra = json.loads(self.extra)
-            except json.JSONDecodeError as e:
-                logger.error(e)
-                raise e
-        return extra
+        return self.db_engine_spec.get_extra_params(self)
 
     def get_encrypted_extra(self):
         encrypted_extra = {}
