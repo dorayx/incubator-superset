@@ -609,4 +609,64 @@ exports.createPages = ({ actions }) => {
     toPath: '/docs/intro',
     isPermanent: true,
   });
+  createRedirect({
+    fromPath: '/tutorial.html',
+    toPath: '/docs/creating-charts-dashboards/first-dashboard',
+    isPermanent: true,
+  });
+  createRedirect({
+    fromPath: '/tutorial.html#connecting-to-a-new-database',
+    toPath: '/docs/creating-charts-dashboards/first-dashboard',
+    isPermanent: true,
+  });
+  createRedirect({
+    fromPath: '/tutorial.html#adding-a-new-table',
+    toPath: '/docs/creating-charts-dashboards/first-dashboard',
+    isPermanent: true,
+  });
+  createRedirect({
+    fromPath: '/tutorial.html#exploring-your-data',
+    toPath: '/docs/creating-charts-dashboards/first-dashboard',
+    isPermanent: true,
+  });
+  createRedirect({
+    fromPath: '/tutorial.html#creating-a-slice-and-dashboard',
+    toPath: '/docs/creating-charts-dashboards/first-dashboard',
+    isPermanent: true,
+  });
+  createRedirect({
+    fromPath: '/issue_code_reference.html#issue-1000',
+    toPath: '/docs/miscellaneous/issue-codes#issue-1000',
+    isPermanent: true,
+  });
+  createRedirect({
+    fromPath: '/issue_code_reference.html#issue-1001',
+    toPath: '/docs/miscellaneous/issue-codes#issue-1001',
+    isPermanent: true,
+  });
+  createRedirect({
+    fromPath: '/issue_code_reference.html#issue-1002',
+    toPath: '/docs/miscellaneous/issue-codes#issue-1002',
+    isPermanent: true,
+  });
+  createRedirect({
+    fromPath: '/issue_code_reference.html#issue-1003',
+    toPath: '/docs/miscellaneous/issue-codes#issue-1003',
+    isPermanent: true,
+  });
+  createRedirect({
+    fromPath: '/issue_code_reference.html#issue-1004',
+    toPath: '/docs/miscellaneous/issue-codes#issue-1004',
+    isPermanent: true,
+  });
+  createRedirect({
+    fromPath: '/issue_code_reference.html#issue-1005',
+    toPath: '/docs/miscellaneous/issue-codes#issue-1005',
+    isPermanent: true,
+  });
+  createRedirect({
+    fromPath: '/docs/installation/email-reports',
+    toPath: '/docs/installation/alerts-reports',
+    isPermanent: true,
+  });
 };

@@ -21,7 +21,9 @@ import PropTypes from 'prop-types';
 import { bindActionCreators } from 'redux';
 import { connect } from 'react-redux';
 
-import ComponentLookup from '../components/gridComponents';
+import { logEvent } from 'src/logger/actions';
+import { addDangerToast } from 'src/messageToasts/actions';
+import { componentLookup } from '../components/gridComponents';
 import getDetailedComponentWidth from '../util/getDetailedComponentWidth';
 import { getActiveFilters } from '../util/activeDashboardFilters';
 import { componentShape } from '../util/propShapes';
@@ -33,11 +35,20 @@ import {
   updateComponents,
   handleComponentDrop,
 } from '../actions/dashboardLayout';
-import { setDirectPathToChild, setMountedTab } from '../actions/dashboardState';
-import { logEvent } from '../../logger/actions';
-import { addDangerToast } from '../../messageToasts/actions';
+import {
+  setDirectPathToChild,
+  setActiveTabs,
+  setFullSizeChartId,
+} from '../actions/dashboardState';
 
 const propTypes = {
+  id: PropTypes.string,
+  parentId: PropTypes.string,
+  depth: PropTypes.number,
+  index: PropTypes.number,
+  renderHoverMenu: PropTypes.bool,
+  renderTabContent: PropTypes.bool,
+  onChangeTab: PropTypes.func,
   component: componentShape.isRequired,
   parentComponent: componentShape.isRequired,
   createComponent: PropTypes.func.isRequired,
@@ -48,6 +59,7 @@ const propTypes = {
   directPathToChild: PropTypes.arrayOf(PropTypes.string),
   directPathLastUpdated: PropTypes.number,
   dashboardId: PropTypes.number.isRequired,
+  isComponentVisible: PropTypes.bool,
 };
 
 const defaultProps = {
@@ -65,18 +77,17 @@ function mapStateToProps(
   const component = dashboardLayout[id];
   const props = {
     component,
+    dashboardLayout,
     parentComponent: dashboardLayout[parentId],
     editMode: dashboardState.editMode,
     undoLength: undoableLayout.past.length,
     redoLength: undoableLayout.future.length,
     filters: getActiveFilters(),
     directPathToChild: dashboardState.directPathToChild,
+    activeTabs: dashboardState.activeTabs,
     directPathLastUpdated: dashboardState.directPathLastUpdated,
     dashboardId: dashboardInfo.id,
-    filterFieldOnFocus:
-      dashboardState.focusedFilterField.length === 0
-        ? {}
-        : dashboardState.focusedFilterField.slice(-1).pop(),
+    fullSizeChartId: dashboardState.fullSizeChartId,
   };
 
   // rows and columns need more data about their child dimensions
@@ -106,7 +117,8 @@ function mapDispatchToProps(dispatch) {
       updateComponents,
       handleComponentDrop,
       setDirectPathToChild,
-      setMountedTab,
+      setFullSizeChartId,
+      setActiveTabs,
       logEvent,
     },
     dispatch,
@@ -116,7 +128,7 @@ function mapDispatchToProps(dispatch) {
 class DashboardComponent extends React.PureComponent {
   render() {
     const { component } = this.props;
-    const Component = component ? ComponentLookup[component.type] : null;
+    const Component = component ? componentLookup[component.type] : null;
     return Component ? <Component {...this.props} /> : null;
   }
 }

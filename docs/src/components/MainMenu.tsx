@@ -50,6 +50,9 @@ const headerStyle = css`
   .menu-sm {
     display: none;
   }
+  .ant-menu-horizontal:not(.ant-menu-dark)>.ant-menu-item-selected {
+    border-bottom: 2px solid #20A7C9;
+  }
   ${[mq[menuResponsiveIndex]]} {
     .menu-sm {
       display: block;
@@ -67,6 +70,7 @@ const logoStyle = css`
 
 interface menuProps {
   mode: string;
+  toggleDrawer: () => null;
 }
 
 const MenuItems = ({ mode, toggleDrawer }: menuProps) => {
@@ -80,6 +84,9 @@ const MenuItems = ({ mode, toggleDrawer }: menuProps) => {
     <Menu mode={mode} selectedKeys={getCurrentPath()}>
       <Menu.Item key="docsintro" style={leftStyle} className="menu-lg">
         <Link to="/docs/intro">Documentation</Link>
+      </Menu.Item>
+      <Menu.Item key="gallery" style={leftStyle} className="menu-lg">
+        <Link to="/gallery">Gallery</Link>
       </Menu.Item>
       <Menu.Item key="community" style={leftStyle} className="menu-lg">
         <Link to="/community">Community</Link>
@@ -95,7 +102,7 @@ const MenuItems = ({ mode, toggleDrawer }: menuProps) => {
       {mode === 'horizontal'
       && (
       <Menu.Item key="github" style={rightStyle}>
-        <a href="https://github.com/apache/incubator-superset" target="_blank" rel="noreferrer">
+        <a href="https://github.com/apache/superset" target="_blank" rel="noreferrer">
           <GithubOutlined className="menu-icon" />
         </a>
       </Menu.Item>
@@ -130,9 +137,9 @@ export default class MainMenu extends React.Component {
     const { visible } = this.state;
     return (
       <Layout.Header css={headerStyle}>
-        <Link to="/">
+        <a href="/">
           <img height="50" css={logoStyle} src={logoSvg} alt="logo" />
-        </Link>
+        </a>
         <MenuItems toggleDrawer={this.toggleDrawer} mode="horizontal" />
         <Drawer
           title="Menu"

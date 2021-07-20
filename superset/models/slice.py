@@ -25,24 +25,21 @@ from flask_appbuilder.models.decorators import renders
 from markupsafe import escape, Markup
 from sqlalchemy import Column, ForeignKey, Integer, String, Table, Text
 from sqlalchemy.engine.base import Connection
-from sqlalchemy.orm import make_transient, relationship
+from sqlalchemy.orm import relationship
 from sqlalchemy.orm.mapper import Mapper
 
 from superset import ConnectorRegistry, db, is_feature_enabled, security_manager
 from superset.legacy import update_time_range
-from superset.models.helpers import AuditMixinNullable, ImportMixin
+from superset.models.helpers import AuditMixinNullable, ImportExportMixin
 from superset.models.tags import ChartUpdater
 from superset.tasks.thumbnails import cache_chart_thumbnail
 from superset.utils import core as utils
+from superset.utils.hashing import md5_sha_from_str
+from superset.utils.memoized import memoized
 from superset.utils.urls import get_url_path
-
-if is_feature_enabled("SIP_38_VIZ_REARCHITECTURE"):
-    from superset.viz_sip38 import BaseViz, viz_types
-else:
-    from superset.viz import BaseViz, viz_types  # type: ignore
+from superset.viz import BaseViz, viz_types  # type: ignore
 
 if TYPE_CHECKING:
-    # pylint: disable=unused-import
     from superset.connectors.base.models import BaseDatasource
 
 metadata = Model.metadata  # pylint: disable=no-member
@@ -57,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 
 class Slice(
-    Model, AuditMixinNullable, ImportMixin
+    Model, AuditMixinNullable, ImportExportMixin
 ):  # pylint: disable=too-many-public-methods
 
     """A slice is essentially a report or a view on data"""
@@ -81,7 +78,7 @@ class Slice(
         primaryjoin="and_(Slice.datasource_id == SqlaTable.id, "
         "Slice.datasource_type == 'table')",
         remote_side="SqlaTable.id",
-        lazy="joined",
+        lazy="subquery",
     )
 
     token = ""
@@ -94,6 +91,7 @@ class Slice(
         "params",
         "cache_timeout",
     ]
+    export_parent = "table"
 
     def __repr__(self) -> str:
         return self.slice_name or str(self.id)
@@ -103,7 +101,7 @@ class Slice(
         return ConnectorRegistry.sources[self.datasource_type]
 
     @property
-    def datasource(self) -> "BaseDatasource":
+    def datasource(self) -> Optional["BaseDatasource"]:
         return self.get_datasource
 
     def clone(self) -> "Slice":
@@ -120,7 +118,7 @@ class Slice(
 
     # pylint: disable=using-constant-test
     @datasource.getter  # type: ignore
-    @utils.memoized
+    @memoized
     def get_datasource(self) -> Optional["BaseDatasource"]:
         return db.session.query(self.cls_model).filter_by(id=self.datasource_id).first()
 
@@ -141,9 +139,14 @@ class Slice(
     def datasource_name_text(self) -> Optional[str]:
         # pylint: disable=no-member
         if self.table:
+            if self.table.schema:
+                return f"{self.table.schema}.{self.table.table_name}"
             return self.table.table_name
-        datasource = self.datasource
-        return datasource.name if datasource else None
+        if self.datasource:
+            if self.datasource.schema:
+                return f"{self.datasource.schema}.{self.datasource.name}"
+            return self.datasource.name
+        return None
 
     @property
     def datasource_edit_url(self) -> Optional[str]:
@@ -154,12 +157,13 @@ class Slice(
     # pylint: enable=using-constant-test
 
     @property  # type: ignore
-    @utils.memoized
+    @memoized
     def viz(self) -> Optional[BaseViz]:
         form_data = json.loads(self.params)
         viz_class = viz_types.get(self.viz_type)
-        if viz_class:
-            return viz_class(datasource=self.datasource, form_data=form_data)
+        datasource = self.datasource
+        if viz_class and datasource:
+            return viz_class(datasource=datasource, form_data=form_data)
         return None
 
     @property
@@ -199,15 +203,15 @@ class Slice(
     @property
     def digest(self) -> str:
         """
-            Returns a MD5 HEX digest that makes this dashboard unique
+        Returns a MD5 HEX digest that makes this dashboard unique
         """
-        return utils.md5_hex(self.params)
+        return md5_sha_from_str(self.params or "")
 
     @property
     def thumbnail_url(self) -> str:
         """
-            Returns a thumbnail URL with a HEX digest. We want to avoid browser cache
-            if the dashboard has changed
+        Returns a thumbnail URL with a HEX digest. We want to avoid browser cache
+        if the dashboard has changed
         """
         return f"/api/v1/chart/{self.id}/thumbnail/{self.digest}/"
 
@@ -221,7 +225,7 @@ class Slice(
         try:
             form_data = json.loads(self.params)
         except Exception as ex:  # pylint: disable=broad-except
-            logger.error("Malformed json in slice's params")
+            logger.error("Malformed json in slice's params", exc_info=True)
             logger.exception(ex)
         form_data.update(
             {
@@ -285,56 +289,12 @@ class Slice(
         </a>
         """
 
-    @classmethod
-    def import_obj(
-        cls,
-        slc_to_import: "Slice",
-        slc_to_override: Optional["Slice"],
-        import_time: Optional[int] = None,
-    ) -> int:
-        """Inserts or overrides slc in the database.
-
-        remote_id and import_time fields in params_dict are set to track the
-        slice origin and ensure correct overrides for multiple imports.
-        Slice.perm is used to find the datasources and connect them.
-
-        :param Slice slc_to_import: Slice object to import
-        :param Slice slc_to_override: Slice to replace, id matches remote_id
-        :returns: The resulting id for the imported slice
-        :rtype: int
-        """
-        session = db.session
-        make_transient(slc_to_import)
-        slc_to_import.dashboards = []
-        slc_to_import.alter_params(remote_id=slc_to_import.id, import_time=import_time)
-
-        slc_to_import = slc_to_import.copy()
-        slc_to_import.reset_ownership()
-        params = slc_to_import.params_dict
-        datasource = ConnectorRegistry.get_datasource_by_name(
-            session,
-            slc_to_import.datasource_type,
-            params["datasource_name"],
-            params["schema"],
-            params["database_name"],
-        )
-        slc_to_import.datasource_id = datasource.id  # type: ignore
-        if slc_to_override:
-            slc_to_override.override(slc_to_import)
-            session.flush()
-            return slc_to_override.id
-        session.add(slc_to_import)
-        logger.info("Final slice: %s", str(slc_to_import.to_json()))
-        session.flush()
-        return slc_to_import.id
-
     @property
     def url(self) -> str:
         return f"/superset/explore/?form_data=%7B%22slice_id%22%3A%20{self.id}%7D"
 
 
-def set_related_perm(mapper: Mapper, connection: Connection, target: Slice) -> None:
-    # pylint: disable=unused-argument
+def set_related_perm(_mapper: Mapper, _connection: Connection, target: Slice) -> None:
     src_class = target.cls_model
     id_ = target.datasource_id
     if id_:
@@ -344,8 +304,8 @@ def set_related_perm(mapper: Mapper, connection: Connection, target: Slice) -> N
             target.schema_perm = ds.schema_perm
 
 
-def event_after_chart_changed(  # pylint: disable=unused-argument
-    mapper: Mapper, connection: Connection, target: Slice
+def event_after_chart_changed(
+    _mapper: Mapper, _connection: Connection, target: Slice
 ) -> None:
     url = get_url_path("Superset.slice", slice_id=target.id, standalone="true")
     cache_chart_thumbnail.delay(url, target.digest, force=True)

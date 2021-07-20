@@ -16,26 +16,31 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import React from 'react';
-import { t, styled } from '@superset-ui/core';
-import { Nav, Navbar, NavItem, MenuItem } from 'react-bootstrap';
-import NavDropdown from 'src/components/NavDropdown';
-import MenuObject, {
-  MenuObjectProps,
-  MenuObjectChildProps,
-} from './MenuObject';
-import NewMenu from './NewMenu';
-import UserMenu from './UserMenu';
-import LanguagePicker, { Languages } from './LanguagePicker';
+import React, { useState, useEffect } from 'react';
+import { styled, css } from '@superset-ui/core';
+import { debounce } from 'lodash';
+import { Global } from '@emotion/react';
+import { getUrlParam } from 'src/utils/urlUtils';
+import { MainNav as DropdownMenu, MenuMode } from 'src/common/components';
+import { Tooltip } from 'src/components/Tooltip';
+import { Link } from 'react-router-dom';
+import { Row, Col, Grid } from 'antd';
+import Icons from 'src/components/Icons';
+import { URL_PARAMS } from 'src/constants';
+import RightMenu from './MenuRight';
+import { Languages } from './LanguagePicker';
 
 interface BrandProps {
   path: string;
   icon: string;
   alt: string;
   width: string | number;
+  tooltip: string;
+  text: string;
 }
 
-interface NavBarProps {
+export interface NavBarProps {
+  show_watermark: boolean;
   bug_report_url?: string;
   version_string?: string;
   version_sha?: string;
@@ -46,6 +51,7 @@ interface NavBarProps {
   user_info_url: string;
   user_login_url: string;
   user_logout_url: string;
+  user_profile_url: string | null;
   locale: string;
 }
 
@@ -56,9 +62,26 @@ export interface MenuProps {
     navbar_right: NavBarProps;
     settings: MenuObjectProps[];
   };
+  isFrontendRoute?: (path?: string) => boolean;
+}
+
+interface MenuObjectChildProps {
+  label: string;
+  name?: string;
+  icon: string;
+  index: number;
+  url?: string;
+  isFrontendRoute?: boolean;
+}
+
+export interface MenuObjectProps extends MenuObjectChildProps {
+  childs?: (MenuObjectChildProps | string)[];
+  isHeader?: boolean;
 }
 
 const StyledHeader = styled.header`
+  background-color: white;
+  margin-bottom: 2px;
   &:nth-last-of-type(2) nav {
     margin-bottom: 2px;
   }
@@ -66,208 +89,227 @@ const StyledHeader = styled.header`
   .caret {
     display: none;
   }
-
-  .navbar-inverse {
-    border: none;
-  }
-
-  .version-info {
-    padding: 5px 20px;
-    color: ${({ theme }) => theme.colors.grayscale.base};
-    font-size: ${({ theme }) => theme.typography.sizes.xs}px;
-
-    div {
-      white-space: nowrap;
-    }
-  }
-
   .navbar-brand {
     display: flex;
     flex-direction: column;
     justify-content: center;
   }
+  .navbar-brand-text {
+    border-left: 1px solid ${({ theme }) => theme.colors.grayscale.light2};
+    border-right: 1px solid ${({ theme }) => theme.colors.grayscale.light2};
+    height: 100%;
+    color: ${({ theme }) => theme.colors.grayscale.dark1};
+    padding-left: ${({ theme }) => theme.gridUnit * 4}px;
+    padding-right: ${({ theme }) => theme.gridUnit * 4}px;
+    margin-right: ${({ theme }) => theme.gridUnit * 6}px;
+    font-size: ${({ theme }) => theme.gridUnit * 4}px;
+    float: left;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 
-  .nav > li > a {
+    span {
+      max-width: ${({ theme }) => theme.gridUnit * 58}px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    @media (max-width: 1127px) {
+      display: none;
+    }
+  }
+  .main-nav .ant-menu-submenu-title > svg {
+    top: ${({ theme }) => theme.gridUnit * 5.25}px;
+  }
+  @media (max-width: 767px) {
+    .navbar-brand {
+      float: none;
+    }
+  }
+  .ant-menu-horizontal .ant-menu-item {
+    height: 100%;
+    line-height: inherit;
+  }
+  .ant-menu > .ant-menu-item > a {
     padding: ${({ theme }) => theme.gridUnit * 4}px;
   }
-
-  .navbar-nav > li > a {
-    color: ${({ theme }) => theme.colors.grayscale.dark1};
-    border-bottom: none;
-    &:focus {
-      border-bottom: none;
+  @media (max-width: 767px) {
+    .ant-menu-item {
+      padding: 0 ${({ theme }) => theme.gridUnit * 6}px 0
+        ${({ theme }) => theme.gridUnit * 3}px !important;
     }
-    &:after {
-      content: '';
-      position: absolute;
-      bottom: -3px;
-      left: 50%;
-      width: 0;
-      height: 3px;
-      background-color: ${({ theme }) => theme.colors.primary.base};
-      opacity: 0;
-      transform: translateX(-50%);
-      transition: all ${({ theme }) => theme.transitionTiming}s;
+    .ant-menu > .ant-menu-item > a {
+      padding: 0px;
     }
+    .main-nav .ant-menu-submenu-title > svg:nth-child(1) {
+      display: none;
+    }
+    .ant-menu-item-active > a {
+      &:hover {
+        color: ${({ theme }) => theme.colors.primary.base} !important;
+        background-color: transparent !important;
+      }
+    }
+  }
 
+  .ant-menu-item a {
     &:hover {
       color: ${({ theme }) => theme.colors.grayscale.dark1};
+      background-color: ${({ theme }) => theme.colors.primary.light5};
       border-bottom: none;
+      margin: 0;
       &:after {
         opacity: 1;
         width: 100%;
       }
     }
-    &:hover,
-    &:focus {
-      margin: 0;
-    }
-  }
-
-  .settings-divider {
-    margin-bottom: 8px;
-    border-bottom: 1px solid ${({ theme }) => theme.colors.grayscale.light2};
-  }
-  .navbar-right {
-    display: flex;
-    align-items: center;
-    .dropdown:first-of-type {
-      /* this is the "+ NEW" button. Sweep this up when it's replaced */
-      margin-right: ${({ theme }) => theme.gridUnit * 2}px;
-    }
   }
 `;
 
+const { SubMenu } = DropdownMenu;
+
+const { useBreakpoint } = Grid;
+
 export function Menu({
   data: { menu, brand, navbar_right: navbarRight, settings },
+  isFrontendRoute = () => false,
 }: MenuProps) {
-  // Flatten settings
-  const flatSettings: any[] = [];
+  const [showMenu, setMenu] = useState<MenuMode>('horizontal');
+  const screens = useBreakpoint();
 
-  if (settings) {
-    settings.forEach((section: object, index: number) => {
-      const newSection: MenuObjectProps = {
-        ...section,
-        index,
-        isHeader: true,
-      };
+  useEffect(() => {
+    function handleResize() {
+      if (window.innerWidth <= 767) {
+        setMenu('inline');
+      } else setMenu('horizontal');
+    }
+    handleResize();
+    const windowResize = debounce(() => handleResize(), 10);
+    window.addEventListener('resize', windowResize);
+    return () => window.removeEventListener('resize', windowResize);
+  }, []);
 
-      flatSettings.push(newSection);
+  const standalone = getUrlParam(URL_PARAMS.standalone);
+  if (standalone) return <></>;
 
-      // Filter out '-'
-      if (newSection.childs) {
-        newSection.childs.forEach((child: any) => {
-          if (child !== '-') {
-            flatSettings.push(child);
+  const renderSubMenu = ({
+    label,
+    childs,
+    url,
+    index,
+    isFrontendRoute,
+  }: MenuObjectProps) => {
+    if (url && isFrontendRoute) {
+      return (
+        <DropdownMenu.Item key={label} role="presentation">
+          <Link role="button" to={url}>
+            {label}
+          </Link>
+        </DropdownMenu.Item>
+      );
+    }
+    if (url) {
+      return (
+        <DropdownMenu.Item key={label}>
+          <a href={url}>{label}</a>
+        </DropdownMenu.Item>
+      );
+    }
+    return (
+      <SubMenu
+        key={index}
+        title={label}
+        icon={showMenu === 'inline' ? <></> : <Icons.TriangleDown />}
+      >
+        {childs?.map((child: MenuObjectChildProps | string, index1: number) => {
+          if (typeof child === 'string' && child === '-') {
+            return <DropdownMenu.Divider key={`$${index1}`} />;
           }
-        });
-      }
-
-      if (index !== settings.length - 1) {
-        flatSettings.push('-');
-      }
-    });
-  }
-
+          if (typeof child !== 'string') {
+            return (
+              <DropdownMenu.Item key={`${child.label}`}>
+                {child.isFrontendRoute ? (
+                  <Link to={child.url || ''}>{child.label}</Link>
+                ) : (
+                  <a href={child.url}>{child.label}</a>
+                )}
+              </DropdownMenu.Item>
+            );
+          }
+          return null;
+        })}
+      </SubMenu>
+    );
+  };
   return (
-    <StyledHeader className="top" id="main-menu">
-      <Navbar inverse fluid staticTop role="navigation">
-        <Navbar.Header>
-          <Navbar.Brand>
+    <StyledHeader className="top" id="main-menu" role="navigation">
+      <Global
+        styles={css`
+          .ant-menu-submenu.ant-menu-submenu-popup.ant-menu.ant-menu-light.ant-menu-submenu-placement-bottomLeft {
+            border-radius: 0px;
+          }
+          .ant-menu-submenu.ant-menu-submenu-popup.ant-menu.ant-menu-light {
+            border-radius: 0px;
+          }
+        `}
+      />
+      <Row>
+        <Col md={16} xs={24}>
+          <Tooltip
+            id="brand-tooltip"
+            placement="bottomLeft"
+            title={brand.tooltip}
+            arrowPointAtCenter
+          >
             <a className="navbar-brand" href={brand.path}>
               <img width={brand.width} src={brand.icon} alt={brand.alt} />
             </a>
-          </Navbar.Brand>
-          <Navbar.Toggle />
-        </Navbar.Header>
-        <Nav>
-          {menu.map((item, index) => (
-            <MenuObject {...item} key={item.label} index={index + 1} />
-          ))}
-        </Nav>
-        <Nav className="navbar-right">
-          {!navbarRight.user_is_anonymous && <NewMenu />}
-          {settings && settings.length && (
-            <NavDropdown id="settings-dropdown" title="Settings">
-              {flatSettings.map((section, index) => {
-                if (section === '-') {
-                  return (
-                    <MenuItem
-                      key={`$${index}`}
-                      divider
-                      disabled
-                      className="settings-divider"
-                    />
-                  );
-                }
-                if (section.isHeader) {
-                  return (
-                    <MenuItem key={`${section.label}`} disabled>
-                      {section.label}
-                    </MenuItem>
-                  );
-                }
+          </Tooltip>
+          {brand.text && (
+            <div className="navbar-brand-text">
+              <span>{brand.text}</span>
+            </div>
+          )}
+          <DropdownMenu
+            mode={showMenu}
+            data-test="navbar-top"
+            className="main-nav"
+          >
+            {menu.map(item => {
+              const props = {
+                ...item,
+                isFrontendRoute: isFrontendRoute(item.url),
+                childs: item.childs?.map(c => {
+                  if (typeof c === 'string') {
+                    return c;
+                  }
 
-                return (
-                  <MenuItem
-                    key={`${section.label}`}
-                    href={section.url}
-                    eventKey={index}
-                  >
-                    {section.label}
-                  </MenuItem>
-                );
-              })}
-            </NavDropdown>
-          )}
-          {navbarRight.documentation_url && (
-            <NavItem
-              href={navbarRight.documentation_url}
-              target="_blank"
-              title="Documentation"
-            >
-              <i className="fa fa-question" />
-              &nbsp;
-            </NavItem>
-          )}
-          {navbarRight.bug_report_url && (
-            <NavItem
-              href={navbarRight.bug_report_url}
-              target="_blank"
-              title="Report a Bug"
-            >
-              <i className="fa fa-bug" />
-              &nbsp;
-            </NavItem>
-          )}
-          {navbarRight.show_language_picker && (
-            <LanguagePicker
-              locale={navbarRight.locale}
-              languages={navbarRight.languages}
-            />
-          )}
-          {!navbarRight.user_is_anonymous && (
-            <UserMenu
-              userInfoUrl={navbarRight.user_info_url}
-              userLogoutUrl={navbarRight.user_logout_url}
-              versionString={navbarRight.version_string}
-              versionSha={navbarRight.version_sha}
-            />
-          )}
-          {navbarRight.user_is_anonymous && (
-            <NavItem href={navbarRight.user_login_url}>
-              <i className="fa fa-fw fa-sign-in" />
-              {t('Login')}
-            </NavItem>
-          )}
-        </Nav>
-      </Navbar>
+                  return {
+                    ...c,
+                    isFrontendRoute: isFrontendRoute(c.url),
+                  };
+                }),
+              };
+
+              return renderSubMenu(props);
+            })}
+          </DropdownMenu>
+        </Col>
+        <Col md={8} xs={24}>
+          <RightMenu
+            align={screens.md ? 'flex-end' : 'flex-start'}
+            settings={settings}
+            navbarRight={navbarRight}
+            isFrontendRoute={isFrontendRoute}
+          />
+        </Col>
+      </Row>
     </StyledHeader>
   );
 }
 
 // transform the menu data to reorganize components
-export default function MenuWrapper({ data }: MenuProps) {
+export default function MenuWrapper({ data, ...rest }: MenuProps) {
   const newMenuData = {
     ...data,
   };
@@ -277,15 +319,9 @@ export default function MenuWrapper({ data }: MenuProps) {
     Manage: true,
   };
 
-  // Menu items that should be ignored
-  const ignore = {
-    'Import Dashboards': true,
-  };
-
   // Cycle through menu.menu to build out cleanedMenu and settings
   const cleanedMenu: MenuObjectProps[] = [];
   const settings: MenuObjectProps[] = [];
-
   newMenuData.menu.forEach((item: any) => {
     if (!item) {
       return;
@@ -301,10 +337,7 @@ export default function MenuWrapper({ data }: MenuProps) {
       item.childs.forEach((child: MenuObjectChildProps | string) => {
         if (typeof child === 'string') {
           children.push(child);
-        } else if (
-          (child as MenuObjectChildProps).label &&
-          !ignore.hasOwnProperty(child.label)
-        ) {
+        } else if ((child as MenuObjectChildProps).label) {
           children.push(child);
         }
       });
@@ -322,5 +355,5 @@ export default function MenuWrapper({ data }: MenuProps) {
   newMenuData.menu = cleanedMenu;
   newMenuData.settings = settings;
 
-  return <Menu data={newMenuData} />;
+  return <Menu data={newMenuData} {...rest} />;
 }

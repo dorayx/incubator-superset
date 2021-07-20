@@ -18,18 +18,24 @@
  */
 import React from 'react';
 import PropTypes from 'prop-types';
-import { Alert, Badge, Col, Tabs, Tab, Well } from 'react-bootstrap';
+import { Row, Col } from 'src/common/components';
+import { Radio } from 'src/components/Radio';
+import Card from 'src/components/Card';
+import Alert from 'src/components/Alert';
+import Badge from 'src/components/Badge';
 import shortid from 'shortid';
-import { styled, SupersetClient, t } from '@superset-ui/core';
-
-import Label from 'src/components/Label';
+import { styled, SupersetClient, t, supersetTheme } from '@superset-ui/core';
 import Button from 'src/components/Button';
+import Tabs from 'src/components/Tabs';
+import CertifiedIcon from 'src/components/CertifiedIcon';
+import WarningIconWithTooltip from 'src/components/WarningIconWithTooltip';
+import DatabaseSelector from 'src/components/DatabaseSelector';
+import Label from 'src/components/Label';
 import Loading from 'src/components/Loading';
 import TableSelector from 'src/components/TableSelector';
-import CertifiedIconWithTooltip from 'src/components/CertifiedIconWithTooltip';
 import EditableTitle from 'src/components/EditableTitle';
 
-import getClientErrorObject from 'src/utils/getClientErrorObject';
+import { getClientErrorObject } from 'src/utils/getClientErrorObject';
 
 import CheckboxControl from 'src/explore/components/controls/CheckboxControl';
 import TextControl from 'src/explore/components/controls/TextControl';
@@ -43,13 +49,10 @@ import Fieldset from 'src/CRUD/Fieldset';
 import Field from 'src/CRUD/Field';
 
 import withToasts from 'src/messageToasts/enhancers/withToasts';
+import { FeatureFlag, isFeatureEnabled } from 'src/featureFlags';
+import Icons from 'src/components/Icons';
 
 const DatasourceContainer = styled.div`
-  .tab-content {
-    height: 600px;
-    overflow: auto;
-  }
-
   .change-warning {
     margin: 16px 10px 0;
     color: ${({ theme }) => theme.colors.warning.base};
@@ -58,15 +61,52 @@ const DatasourceContainer = styled.div`
   .change-warning .bold {
     font-weight: ${({ theme }) => theme.typography.weights.bold};
   }
+
+  .form-group.has-feedback > .help-block {
+    margin-top: 8px;
+  }
+
+  .form-group.form-group-md {
+    margin-bottom: 8px;
+  }
 `;
 
 const FlexRowContainer = styled.div`
   align-items: center;
   display: flex;
 
-  > svg {
+  svg {
     margin-right: ${({ theme }) => theme.gridUnit}px;
   }
+`;
+
+const StyledTableTabs = styled(Tabs)`
+  overflow: visible;
+  .ant-tabs-content-holder {
+    overflow: visible;
+  }
+`;
+
+const StyledBadge = styled(Badge)`
+  .ant-badge-count {
+    line-height: ${({ theme }) => theme.gridUnit * 4}px;
+    height: ${({ theme }) => theme.gridUnit * 4}px;
+    margin-left: ${({ theme }) => theme.gridUnit}px;
+  }
+`;
+
+const EditLockContainer = styled.div`
+  font-size: ${supersetTheme.typography.sizes.s}px;
+  display: flex;
+  align-items: center;
+  a {
+    padding: 0 10px;
+  }
+`;
+
+const ColumnButtonWrapper = styled.div`
+  text-align: right;
+  ${({ theme }) => `margin-bottom: ${theme.gridUnit * 2}px`}
 `;
 
 const checkboxGenerator = (d, onChange) => (
@@ -74,10 +114,23 @@ const checkboxGenerator = (d, onChange) => (
 );
 const DATA_TYPES = ['STRING', 'NUMERIC', 'DATETIME'];
 
+const DATASOURCE_TYPES_ARR = [
+  { key: 'physical', label: t('Physical (table or view)') },
+  { key: 'virtual', label: t('Virtual (SQL)') },
+];
+const DATASOURCE_TYPES = {};
+DATASOURCE_TYPES_ARR.forEach(o => {
+  DATASOURCE_TYPES[o.key] = o;
+});
+
 function CollectionTabTitle({ title, collection }) {
   return (
-    <div>
-      {title} <Badge>{collection ? collection.length : 0}</Badge>
+    <div
+      css={{ display: 'flex', alignItems: 'center' }}
+      data-test={`collection-tab-${title}`}
+    >
+      {title}{' '}
+      <StyledBadge count={collection ? collection.length : 0} showZero />
     </div>
   );
 }
@@ -100,16 +153,18 @@ function ColumnCollectionTable({
     <CollectionTable
       collection={columns}
       tableColumns={['column_name', 'type', 'is_dttm', 'filterable', 'groupby']}
+      sortColumns={['column_name', 'type', 'is_dttm', 'filterable', 'groupby']}
       allowDeletes
       allowAddItem={allowAddItem}
       itemGenerator={itemGenerator}
+      stickyHeader
       expandFieldset={
         <FormContainer>
           <Fieldset compact>
             {showExpression && (
               <Field
                 fieldKey="expression"
-                label={t('SQL Expression')}
+                label={t('SQL expression')}
                 control={
                   <TextAreaControl
                     language="markdown"
@@ -121,17 +176,27 @@ function ColumnCollectionTable({
             <Field
               fieldKey="verbose_name"
               label={t('Label')}
-              control={<TextControl placeholder={t('Label')} />}
+              control={
+                <TextControl
+                  controlId="verbose_name"
+                  placeholder={t('Label')}
+                />
+              }
             />
             <Field
               fieldKey="description"
               label={t('Description')}
-              control={<TextControl placeholder={t('Description')} />}
+              control={
+                <TextControl
+                  controlId="description"
+                  placeholder={t('Description')}
+                />
+              }
             />
             {allowEditDataType && (
               <Field
                 fieldKey="type"
-                label={t('Data Type')}
+                label={t('Data type')}
                 control={
                   <SelectControl choices={DATA_TYPES} name="type" freeForm />
                 }
@@ -139,13 +204,13 @@ function ColumnCollectionTable({
             )}
             <Field
               fieldKey="python_date_format"
-              label={t('Datetime Format')}
+              label={t('Datetime format')}
               description={
                 /* Note the fragmented translations may not work. */
                 <div>
                   {t('The pattern of timestamp format. For strings use ')}
                   <a href="https://docs.python.org/2/library/datetime.html#strftime-strptime-behavior">
-                    {t('python datetime string pattern')}
+                    {t('Python datetime string pattern')}
                   </a>
                   {t(' expression which needs to adhere to the ')}
                   <a href="https://en.wikipedia.org/wiki/ISO_8601">
@@ -162,17 +227,22 @@ function ColumnCollectionTable({
                       database/column name level via the extra parameter.`)}
                 </div>
               }
-              control={<TextControl placeholder="%y/%m/%d" />}
+              control={
+                <TextControl
+                  controlId="python_date_format"
+                  placeholder="%Y/%m/%d"
+                />
+              }
             />
           </Fieldset>
         </FormContainer>
       }
       columnLabels={{
         column_name: t('Column'),
-        type: t('Data Type'),
-        groupby: t('Is Dimension'),
-        is_dttm: t('Is Temporal'),
-        filterable: t('Is Filterable'),
+        type: t('Data type'),
+        groupby: t('Is dimension'),
+        is_dttm: t('Is temporal'),
+        filterable: t('Is filterable'),
       }}
       onChange={onChange}
       itemRenderers={{
@@ -182,7 +252,7 @@ function ColumnCollectionTable({
           ) : (
             v
           ),
-        type: d => <Label>{d}</Label>,
+        type: d => (d ? <Label>{d}</Label> : null),
         is_dttm: checkboxGenerator,
         filterable: checkboxGenerator,
         groupby: checkboxGenerator,
@@ -228,7 +298,7 @@ StackedField.propTypes = {
 };
 
 function FormContainer({ children }) {
-  return <Well style={{ marginTop: 20 }}>{children}</Well>;
+  return <Card padded>{children}</Card>;
 }
 
 FormContainer.propTypes = {
@@ -250,7 +320,21 @@ class DatasourceEditor extends React.PureComponent {
   constructor(props) {
     super(props);
     this.state = {
-      datasource: props.datasource,
+      datasource: {
+        ...props.datasource,
+        metrics: props.datasource.metrics?.map(metric => {
+          const {
+            certification: { details, certified_by: certifiedBy } = {},
+            warning_markdown: warningMarkdown,
+          } = JSON.parse(metric.extra || '{}') || {};
+          return {
+            ...metric,
+            certification_details: details || '',
+            warning_markdown: warningMarkdown || '',
+            certified_by: certifiedBy,
+          };
+        }),
+      },
       errors: [],
       isDruid:
         props.datasource.type === 'druid' ||
@@ -258,29 +342,49 @@ class DatasourceEditor extends React.PureComponent {
       isSqla:
         props.datasource.datasource_type === 'table' ||
         props.datasource.type === 'table',
+      isEditMode: false,
       databaseColumns: props.datasource.columns.filter(col => !col.expression),
       calculatedColumns: props.datasource.columns.filter(
         col => !!col.expression,
       ),
       metadataLoading: false,
-      activeTabKey: 1,
+      activeTabKey: 0,
+      datasourceType: props.datasource.sql
+        ? DATASOURCE_TYPES.virtual.key
+        : DATASOURCE_TYPES.physical.key,
     };
 
     this.onChange = this.onChange.bind(this);
+    this.onChangeEditMode = this.onChangeEditMode.bind(this);
     this.onDatasourcePropChange = this.onDatasourcePropChange.bind(this);
     this.onDatasourceChange = this.onDatasourceChange.bind(this);
     this.syncMetadata = this.syncMetadata.bind(this);
     this.setColumns = this.setColumns.bind(this);
     this.validateAndChange = this.validateAndChange.bind(this);
     this.handleTabSelect = this.handleTabSelect.bind(this);
+    this.allowEditSource = !isFeatureEnabled(
+      FeatureFlag.DISABLE_DATASET_SOURCE_EDIT,
+    );
   }
 
   onChange() {
-    const datasource = {
+    // Emptying SQL if "Physical" radio button is selected
+    // Currently the logic to know whether the source is
+    // physical or virtual is based on whether SQL is empty or not.
+    const { datasourceType, datasource } = this.state;
+    const sql =
+      datasourceType === DATASOURCE_TYPES.physical.key ? '' : datasource.sql;
+
+    const newDatasource = {
       ...this.state.datasource,
+      sql,
       columns: [...this.state.databaseColumns, ...this.state.calculatedColumns],
     };
-    this.props.onChange(datasource, this.state.errors);
+    this.props.onChange(newDatasource, this.state.errors);
+  }
+
+  onChangeEditMode() {
+    this.setState(prevState => ({ isEditMode: !prevState.isEditMode }));
   }
 
   onDatasourceChange(datasource) {
@@ -290,12 +394,19 @@ class DatasourceEditor extends React.PureComponent {
   onDatasourcePropChange(attr, value) {
     const datasource = { ...this.state.datasource, [attr]: value };
     this.setState(
-      prevState => ({ datasource: { ...prevState.datasource, [attr]: value } }),
+      prevState => ({
+        datasource: { ...prevState.datasource, [attr]: value },
+      }),
       this.onDatasourceChange(datasource),
     );
   }
 
+  onDatasourceTypeChange(datasourceType) {
+    this.setState({ datasourceType });
+  }
+
   setColumns(obj) {
+    // update calculatedColumns or databaseColumns
     this.setState(obj, this.validateAndChange);
   }
 
@@ -331,13 +442,18 @@ class DatasourceEditor extends React.PureComponent {
           type: col.type,
           groupby: true,
           filterable: true,
+          is_dttm: col.is_dttm,
         });
         results.added.push(col.name);
-      } else if (currentCol.type !== col.type) {
+      } else if (
+        currentCol.type !== col.type ||
+        currentCol.is_dttm !== col.is_dttm
+      ) {
         // modified column
         finalColumns.push({
           ...currentCol,
           type: col.type,
+          is_dttm: col.is_dttm,
         });
         results.modified.push(col.name);
       } else {
@@ -357,31 +473,29 @@ class DatasourceEditor extends React.PureComponent {
 
   syncMetadata() {
     const { datasource } = this.state;
-    // Handle carefully when the schema is empty
-    const endpoint =
-      `/datasource/external_metadata/${
-        datasource.type || datasource.datasource_type
-      }/${datasource.id}/` +
-      `?db_id=${datasource.database.id}` +
-      `&schema=${datasource.schema || ''}` +
-      `&table_name=${datasource.datasource_name || datasource.table_name}`;
+    const endpoint = `/datasource/external_metadata/${
+      datasource.type || datasource.datasource_type
+    }/${datasource.id}/`;
     this.setState({ metadataLoading: true });
 
     SupersetClient.get({ endpoint })
       .then(({ json }) => {
         const results = this.updateColumns(json);
-        if (results.modified.length)
+        if (results.modified.length) {
           this.props.addSuccessToast(
             t('Modified columns: %s', results.modified.join(', ')),
           );
-        if (results.removed.length)
+        }
+        if (results.removed.length) {
           this.props.addSuccessToast(
             t('Removed columns: %s', results.removed.join(', ')),
           );
-        if (results.added.length)
+        }
+        if (results.added.length) {
           this.props.addSuccessToast(
             t('New columns added: %s', results.added.join(', ')),
           );
+        }
         this.props.addSuccessToast(t('Metadata has been synced'));
         this.setState({ metadataLoading: false });
       })
@@ -451,34 +565,6 @@ class DatasourceEditor extends React.PureComponent {
         item={datasource}
         onChange={this.onDatasourceChange}
       >
-        {this.state.isSqla && (
-          <Field
-            fieldKey="tableSelector"
-            label={t('Physical Table')}
-            control={
-              <TableSelector
-                dbId={datasource.database.id}
-                schema={datasource.schema}
-                tableName={datasource.datasource_name}
-                onSchemaChange={schema =>
-                  this.onDatasourcePropChange('schema', schema)
-                }
-                onTableChange={table =>
-                  this.onDatasourcePropChange('datasource_name', table)
-                }
-                sqlLabMode={false}
-                clearable={false}
-                handleError={this.props.addDangerToast}
-                isDatabaseSelectEnabled={false}
-              />
-            }
-            description={t(
-              'The pointer to a physical table. Keep in mind that the chart is ' +
-                'associated to this Superset logical table, and this logical table points ' +
-                'the physical table referenced here.',
-            )}
-          />
-        )}
         <Field
           fieldKey="description"
           label={t('Description')}
@@ -492,9 +578,10 @@ class DatasourceEditor extends React.PureComponent {
           description={t(
             'Default URL to redirect to when accessing from the dataset list page',
           )}
-          control={<TextControl />}
+          control={<TextControl controlId="default_endpoint" />}
         />
         <Field
+          inline
           fieldKey="filter_select_enabled"
           label={t('Autocomplete filters')}
           description={t('Whether to populate autocomplete filters options')}
@@ -503,7 +590,7 @@ class DatasourceEditor extends React.PureComponent {
         {this.state.isSqla && (
           <Field
             fieldKey="fetch_values_predicate"
-            label={t('Autocomplete Query Predicate')}
+            label={t('Autocomplete query predicate')}
             description={t(
               'When using "Autocomplete filters", this can be used to improve performance ' +
                 'of the query fetching the values. Use this option to apply a ' +
@@ -511,21 +598,40 @@ class DatasourceEditor extends React.PureComponent {
                 'values from the table. Typically the intent would be to limit the scan ' +
                 'by applying a relative time filter on a partitioned or indexed time-related field.',
             )}
-            control={<TextControl />}
+            control={<TextControl controlId="fetch_values_predicate" />}
+          />
+        )}
+        {this.state.isSqla && (
+          <Field
+            fieldKey="extra"
+            label={t('Extra')}
+            description={t(
+              'Extra data to specify table metadata. Currently supports ' +
+                'metadata of the format: `{ "certification": { "certified_by": ' +
+                '"Data Platform Team", "details": "This table is the source of truth." ' +
+                '}, "warning_markdown": "This is a warning." }`.',
+            )}
+            control={
+              <TextAreaControl
+                controlId="extra"
+                language="json"
+                offerEditInModal={false}
+              />
+            }
           />
         )}
         <Field
           fieldKey="owners"
           label={t('Owners')}
-          description={t('Owners of the datasource')}
+          description={t('Owners of the dataset')}
           control={
             <SelectAsyncControl
-              dataEndpoint="/users/api/read"
+              dataEndpoint="api/v1/dataset/related/owners"
               multi
               mutator={data =>
-                data.pks.map((pk, i) => ({
-                  value: pk,
-                  label: `${data.result[i].first_name} ${data.result[i].last_name}`,
+                data.result.map(pk => ({
+                  value: pk.value,
+                  label: `${pk.text}`,
                 }))
               }
             />
@@ -544,44 +650,21 @@ class DatasourceEditor extends React.PureComponent {
         item={datasource}
         onChange={this.onDatasourceChange}
       >
-        {this.state.isSqla && (
-          <Field
-            fieldKey="sql"
-            label={t('SQL')}
-            description={t(
-              'When specifying SQL, the dataset acts as a view. ' +
-                'Superset will use this statement as a subquery while grouping and filtering ' +
-                'on the generated parent queries.',
-            )}
-            control={
-              <TextAreaControl language="sql" offerEditInModal={false} />
-            }
-          />
-        )}
-        {this.state.isDruid && (
-          <Field
-            fieldKey="json"
-            label={t('JSON')}
-            description={
-              <div>{t('The JSON metric or post aggregation definition.')}</div>
-            }
-            control={
-              <TextAreaControl language="json" offerEditInModal={false} />
-            }
-          />
-        )}
         <Field
           fieldKey="cache_timeout"
-          label={t('Cache Timeout')}
+          label={t('Cache timeout')}
           description={t(
             'The duration of time in seconds before the cache is invalidated',
           )}
-          control={<TextControl />}
+          control={<TextControl controlId="cache_timeout" />}
         />
         <Field
           fieldKey="offset"
           label={t('Hours offset')}
-          control={<TextControl />}
+          control={<TextControl controlId="offset" />}
+          description={t(
+            'The number of hours, negative or positive, to shift the time column. This can be used to move UTC time to local time.',
+          )}
         />
         {this.state.isSqla && (
           <Field
@@ -590,7 +673,7 @@ class DatasourceEditor extends React.PureComponent {
             description={t(
               'A set of parameters that become available in the query using Jinja templating syntax',
             )}
-            control={<TextControl />}
+            control={<TextControl controlId="template_params" />}
           />
         )}
       </Fieldset>
@@ -601,11 +684,9 @@ class DatasourceEditor extends React.PureComponent {
     const { datasource } = this.state;
     const { spatials, all_cols: allCols } = datasource;
     return (
-      <Tab
-        title={
-          <CollectionTabTitle collection={spatials} title={t('Spatial')} />
-        }
-        eventKey={4}
+      <Tabs.TabPane
+        tab={<CollectionTabTitle collection={spatials} title={t('Spatial')} />}
+        key={4}
       >
         <CollectionTable
           tableColumns={['name', 'config']}
@@ -626,18 +707,189 @@ class DatasourceEditor extends React.PureComponent {
             ),
           }}
         />
-      </Tab>
+      </Tabs.TabPane>
+    );
+  }
+
+  renderSourceFieldset() {
+    const { datasource } = this.state;
+    return (
+      <div>
+        <div className="m-l-10 m-t-20 m-b-10">
+          {DATASOURCE_TYPES_ARR.map(type => (
+            <Radio
+              key={type.key}
+              value={type.key}
+              inline
+              onChange={this.onDatasourceTypeChange.bind(this, type.key)}
+              checked={this.state.datasourceType === type.key}
+              disabled={!this.state.isEditMode}
+            >
+              {type.label}
+            </Radio>
+          ))}
+        </div>
+        <hr />
+        <Fieldset item={datasource} onChange={this.onDatasourceChange} compact>
+          {this.state.datasourceType === DATASOURCE_TYPES.virtual.key && (
+            <div>
+              {this.state.isSqla && (
+                <>
+                  <Field
+                    fieldKey="databaseSelector"
+                    label={t('virtual')}
+                    control={
+                      <DatabaseSelector
+                        dbId={datasource.database.id}
+                        schema={datasource.schema}
+                        onSchemaChange={schema =>
+                          this.state.isEditMode &&
+                          this.onDatasourcePropChange('schema', schema)
+                        }
+                        onDbChange={database =>
+                          this.state.isEditMode &&
+                          this.onDatasourcePropChange('database', database)
+                        }
+                        formMode={false}
+                        handleError={this.props.addDangerToast}
+                        readOnly={!this.state.isEditMode}
+                      />
+                    }
+                  />
+                  <Field
+                    fieldKey="table_name"
+                    label={t('Dataset name')}
+                    control={
+                      <TextControl
+                        controlId="table_name"
+                        onChange={table => {
+                          this.onDatasourcePropChange('table_name', table);
+                        }}
+                        placeholder={t('Dataset name')}
+                        disabled={!this.state.isEditMode}
+                      />
+                    }
+                  />
+                  <Field
+                    fieldKey="sql"
+                    label={t('SQL')}
+                    description={t(
+                      'When specifying SQL, the datasource acts as a view. ' +
+                        'Superset will use this statement as a subquery while grouping and filtering ' +
+                        'on the generated parent queries.',
+                    )}
+                    control={
+                      <TextAreaControl
+                        language="sql"
+                        offerEditInModal={false}
+                        minLines={20}
+                        maxLines={20}
+                        readOnly={!this.state.isEditMode}
+                      />
+                    }
+                  />
+                </>
+              )}
+              {this.state.isDruid && (
+                <Field
+                  fieldKey="json"
+                  label={t('JSON')}
+                  description={
+                    <div>
+                      {t('The JSON metric or post aggregation definition.')}
+                    </div>
+                  }
+                  control={
+                    <TextAreaControl language="json" offerEditInModal={false} />
+                  }
+                />
+              )}
+            </div>
+          )}
+          {this.state.datasourceType === DATASOURCE_TYPES.physical.key && (
+            <Col xs={24} md={12}>
+              {this.state.isSqla && (
+                <Field
+                  fieldKey="tableSelector"
+                  label={t('Physical')}
+                  control={
+                    <TableSelector
+                      clearable={false}
+                      dbId={datasource.database.id}
+                      handleError={this.props.addDangerToast}
+                      schema={datasource.schema}
+                      sqlLabMode={false}
+                      tableName={datasource.table_name}
+                      onSchemaChange={
+                        this.state.isEditMode
+                          ? schema =>
+                              this.onDatasourcePropChange('schema', schema)
+                          : undefined
+                      }
+                      onDbChange={
+                        this.state.isEditMode
+                          ? database =>
+                              this.onDatasourcePropChange('database', database)
+                          : undefined
+                      }
+                      onTableChange={
+                        this.state.isEditMode
+                          ? table =>
+                              this.onDatasourcePropChange('table_name', table)
+                          : undefined
+                      }
+                      readOnly={!this.state.isEditMode}
+                    />
+                  }
+                  description={t(
+                    'The pointer to a physical table (or view). Keep in mind that the chart is ' +
+                      'associated to this Superset logical table, and this logical table points ' +
+                      'the physical table referenced here.',
+                  )}
+                />
+              )}
+            </Col>
+          )}
+        </Fieldset>
+        {this.allowEditSource && (
+          <EditLockContainer>
+            <span role="button" tabIndex={0} onClick={this.onChangeEditMode}>
+              {this.state.isEditMode ? (
+                <Icons.LockUnlocked
+                  iconColor={supersetTheme.colors.grayscale.base}
+                />
+              ) : (
+                <Icons.LockLocked
+                  iconColor={supersetTheme.colors.grayscale.base}
+                />
+              )}
+            </span>
+            {!this.state.isEditMode && (
+              <div>{t('Click the lock to make changes.')}</div>
+            )}
+            {this.state.isEditMode && (
+              <div>{t('Click the lock to prevent further changes.')}</div>
+            )}
+          </EditLockContainer>
+        )}
+      </div>
     );
   }
 
   renderErrors() {
     if (this.state.errors.length > 0) {
       return (
-        <Alert bsStyle="danger">
-          {this.state.errors.map(err => (
-            <div key={err}>{err}</div>
-          ))}
-        </Alert>
+        <Alert
+          css={theme => ({ marginBottom: theme.gridUnit * 4 })}
+          type="error"
+          message={
+            <>
+              {this.state.errors.map(err => (
+                <div key={err}>{err}</div>
+              ))}
+            </>
+          }
+        />
       );
     }
     return null;
@@ -647,10 +899,11 @@ class DatasourceEditor extends React.PureComponent {
     return (
       <CollectionTable
         tableColumns={['metric_name', 'verbose_name', 'expression']}
+        sortColumns={['metric_name', 'verbose_name', 'expression']}
         columnLabels={{
           metric_name: t('Metric'),
           verbose_name: t('Label'),
-          expression: t('SQL Expression'),
+          expression: t('SQL expression'),
         }}
         expandFieldset={
           <FormContainer>
@@ -658,40 +911,59 @@ class DatasourceEditor extends React.PureComponent {
               <Field
                 fieldKey="verbose_name"
                 label={t('Label')}
-                control={<TextControl />}
+                control={<TextControl controlId="verbose_name" />}
               />
               <Field
                 fieldKey="description"
                 label={t('Description')}
-                control={<TextControl placeholder={t('Description')} />}
+                control={
+                  <TextControl
+                    controlId="description"
+                    placeholder={t('Description')}
+                  />
+                }
               />
               <Field
                 fieldKey="d3format"
-                label={t('D3 Format')}
-                control={<TextControl placeholder="%y/%m/%d" />}
+                label={t('D3 format')}
+                control={
+                  <TextControl controlId="d3format" placeholder="%y/%m/%d" />
+                }
               />
               <Field
-                label={t('Warning Message')}
-                fieldKey="warning_text"
-                description={t(
-                  'Warning message to display in the metric selector',
-                )}
-                control={<TextControl placeholder={t('Warning Message')} />}
-              />
-              <Field
-                label={t('Certified By')}
+                label={t('Certified by')}
                 fieldKey="certified_by"
                 description={t(
                   'Person or group that has certified this metric',
                 )}
-                control={<TextControl placeholder={t('Certified By')} />}
+                control={
+                  <TextControl
+                    controlId="certified_by"
+                    placeholder={t('Certified by')}
+                  />
+                }
               />
               <Field
-                label={t('Certification Details')}
+                label={t('Certification details')}
                 fieldKey="certification_details"
                 description={t('Details of the certification')}
                 control={
-                  <TextControl placeholder={t('Certification Details')} />
+                  <TextControl
+                    controlId="certification_details"
+                    placeholder={t('Certification details')}
+                  />
+                }
+              />
+              <Field
+                label={t('Warning')}
+                fieldKey="warning_markdown"
+                description={t('Optional warning about use of this metric')}
+                control={
+                  <TextAreaControl
+                    controlId="warning_markdown"
+                    language="markdown"
+                    offerEditInModal={false}
+                  />
                 }
               />
             </Fieldset>
@@ -709,9 +981,14 @@ class DatasourceEditor extends React.PureComponent {
           metric_name: (v, onChange, _, record) => (
             <FlexRowContainer>
               {record.is_certified && (
-                <CertifiedIconWithTooltip
+                <CertifiedIcon
                   certifiedBy={record.certified_by}
                   details={record.certification_details}
+                />
+              )}
+              {record.warning_markdown && (
+                <WarningIconWithTooltip
+                  warningMarkdown={record.warning_markdown}
                 />
               )}
               <EditableTitle canEdit title={v} onSaveTitle={onChange} />
@@ -743,6 +1020,7 @@ class DatasourceEditor extends React.PureComponent {
           ),
         }}
         allowDeletes
+        stickyHeader
       />
     );
   }
@@ -752,106 +1030,111 @@ class DatasourceEditor extends React.PureComponent {
     return (
       <DatasourceContainer>
         {this.renderErrors()}
-        <div className="m-t-10">
-          <Alert bsStyle="warning">
-            <strong>{t('Be careful.')} </strong>
-            {t(
-              'Changing these settings will affect all charts using this dataset, including charts owned by other people.',
-            )}
-          </Alert>
-        </div>
-        <Tabs
+        <Alert
+          css={theme => ({ marginBottom: theme.gridUnit * 4 })}
+          type="warning"
+          message={
+            <>
+              {' '}
+              <strong>{t('Be careful.')} </strong>
+              {t(
+                'Changing these settings will affect all charts using this dataset, including charts owned by other people.',
+              )}
+            </>
+          }
+        />
+        <StyledTableTabs
+          fullWidth={false}
           id="table-tabs"
-          onSelect={this.handleTabSelect}
+          data-test="edit-dataset-tabs"
+          onChange={this.handleTabSelect}
           defaultActiveKey={activeTabKey}
         >
-          <Tab
-            title={
+          <Tabs.TabPane key={0} tab={t('Source')}>
+            {this.renderSourceFieldset()}
+          </Tabs.TabPane>
+          <Tabs.TabPane
+            tab={
               <CollectionTabTitle
                 collection={datasource.metrics}
                 title={t('Metrics')}
               />
             }
-            eventKey={1}
+            key={1}
           >
-            {activeTabKey === 1 && this.renderMetricCollection()}
-          </Tab>
-          <Tab
-            title={
+            {this.renderMetricCollection()}
+          </Tabs.TabPane>
+          <Tabs.TabPane
+            tab={
               <CollectionTabTitle
                 collection={this.state.databaseColumns}
                 title={t('Columns')}
               />
             }
-            eventKey={2}
+            key={2}
           >
-            {activeTabKey === 2 && (
-              <div>
-                <ColumnCollectionTable
-                  columns={this.state.databaseColumns}
-                  onChange={databaseColumns =>
-                    this.setColumns({ databaseColumns })
-                  }
-                />
-                <Button
-                  buttonStyle="primary"
-                  onClick={this.syncMetadata}
-                  className="sync-from-source"
-                  disabled={!!datasource.sql}
-                  tooltip={
-                    datasource.sql
-                      ? t('This option is not yet available for views')
-                      : null
-                  }
-                >
-                  {t('Sync columns from source')}
-                </Button>
-                {this.state.metadataLoading && <Loading />}
-              </div>
-            )}
-          </Tab>
-          <Tab
-            title={
+            <div>
+              <ColumnButtonWrapper>
+                <span className="m-t-10 m-r-10">
+                  <Button
+                    buttonSize="small"
+                    buttonStyle="primary"
+                    onClick={this.syncMetadata}
+                    className="sync-from-source"
+                  >
+                    <i className="fa fa-database" />{' '}
+                    {t('Sync columns from source')}
+                  </Button>
+                </span>
+              </ColumnButtonWrapper>
+              <ColumnCollectionTable
+                className="columns-table"
+                columns={this.state.databaseColumns}
+                onChange={databaseColumns =>
+                  this.setColumns({ databaseColumns })
+                }
+              />
+              {this.state.metadataLoading && <Loading />}
+            </div>
+          </Tabs.TabPane>
+          <Tabs.TabPane
+            tab={
               <CollectionTabTitle
                 collection={this.state.calculatedColumns}
-                title={t('Calculated Columns')}
+                title={t('Calculated columns')}
               />
             }
-            eventKey={3}
+            key={3}
           >
-            {activeTabKey === 3 && (
-              <ColumnCollectionTable
-                columns={this.state.calculatedColumns}
-                onChange={calculatedColumns =>
-                  this.setColumns({ calculatedColumns })
-                }
-                editableColumnName
-                showExpression
-                allowAddItem
-                allowEditDataType
-                itemGenerator={() => ({
-                  column_name: '<new column>',
-                  filterable: true,
-                  groupby: true,
-                  expression: '<enter SQL expression here>',
-                  __expanded: true,
-                })}
-              />
-            )}
-          </Tab>
-          <Tab eventKey={4} title={t('Settings')}>
-            {activeTabKey === 4 && (
-              <div>
-                <Col md={6}>
-                  <FormContainer>{this.renderSettingsFieldset()}</FormContainer>
-                </Col>
-                <Col md={6}>
-                  <FormContainer>{this.renderAdvancedFieldset()}</FormContainer>
-                </Col>
-              </div>
-            )}
-          </Tab>
-        </Tabs>
+            <ColumnCollectionTable
+              columns={this.state.calculatedColumns}
+              onChange={calculatedColumns =>
+                this.setColumns({ calculatedColumns })
+              }
+              editableColumnName
+              showExpression
+              allowAddItem
+              allowEditDataType
+              itemGenerator={() => ({
+                column_name: '<new column>',
+                filterable: true,
+                groupby: true,
+                expression: '<enter SQL expression here>',
+                __expanded: true,
+              })}
+            />
+          </Tabs.TabPane>
+          <Tabs.TabPane key={4} tab={t('Settings')}>
+            <Row gutter={16}>
+              <Col xs={24} md={12}>
+                <FormContainer>{this.renderSettingsFieldset()}</FormContainer>
+              </Col>
+              <Col xs={24} md={12}>
+                <FormContainer>{this.renderAdvancedFieldset()}</FormContainer>
+              </Col>
+            </Row>
+          </Tabs.TabPane>
+        </StyledTableTabs>
       </DatasourceContainer>
     );
   }

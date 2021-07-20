@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { Preset } from '@superset-ui/core';
+import { isFeatureEnabled, Preset } from '@superset-ui/core';
 import {
   BigNumberChartPlugin,
   BigNumberTotalChartPlugin,
@@ -25,7 +25,6 @@ import CalendarChartPlugin from '@superset-ui/legacy-plugin-chart-calendar';
 import ChordChartPlugin from '@superset-ui/legacy-plugin-chart-chord';
 import CountryMapChartPlugin from '@superset-ui/legacy-plugin-chart-country-map';
 import EventFlowChartPlugin from '@superset-ui/legacy-plugin-chart-event-flow';
-import ForceDirectedChartPlugin from '@superset-ui/legacy-plugin-chart-force-directed';
 import HeatmapChartPlugin from '@superset-ui/legacy-plugin-chart-heatmap';
 import HistogramChartPlugin from '@superset-ui/legacy-plugin-chart-histogram';
 import HorizonChartPlugin from '@superset-ui/legacy-plugin-chart-horizon';
@@ -51,18 +50,42 @@ import {
   DualLineChartPlugin,
   LineChartPlugin,
   LineMultiChartPlugin,
-  PieChartPlugin,
   TimePivotChartPlugin,
 } from '@superset-ui/legacy-preset-chart-nvd3';
-import { LegacyBoxPlotChartPlugin } from '@superset-ui/preset-chart-xy';
 import { DeckGLChartPreset } from '@superset-ui/legacy-preset-chart-deckgl';
-import { EchartsTimeseriesChartPlugin } from '@superset-ui/plugin-chart-echarts';
-
+import {
+  EchartsPieChartPlugin,
+  EchartsBoxPlotChartPlugin,
+  EchartsTimeseriesChartPlugin,
+  EchartsGraphChartPlugin,
+  EchartsGaugeChartPlugin,
+  EchartsRadarChartPlugin,
+  EchartsFunnelChartPlugin,
+  EchartsTreemapChartPlugin,
+  EchartsMixedTimeseriesChartPlugin,
+  EchartsTreeChartPlugin,
+} from '@superset-ui/plugin-chart-echarts';
+import {
+  SelectFilterPlugin,
+  RangeFilterPlugin,
+  TimeFilterPlugin,
+  TimeColumnFilterPlugin,
+  TimeGrainFilterPlugin,
+  GroupByFilterPlugin,
+} from 'src/filters/components/';
+import { PivotTableChartPlugin as PivotTableChartPluginV2 } from '@superset-ui/plugin-chart-pivot-table';
 import FilterBoxChartPlugin from '../FilterBox/FilterBoxChartPlugin';
 import TimeTableChartPlugin from '../TimeTable/TimeTableChartPlugin';
+import { FeatureFlag } from '../../featureFlags';
 
 export default class MainPreset extends Preset {
   constructor() {
+    const experimentalplugins = isFeatureEnabled(
+      FeatureFlag.DASHBOARD_FILTERS_EXPERIMENTAL,
+    )
+      ? [new GroupByFilterPlugin().configure({ key: 'filter_groupby' })]
+      : [];
+
     super({
       name: 'Legacy charts',
       presets: [new DeckGLChartPreset()],
@@ -71,7 +94,7 @@ export default class MainPreset extends Preset {
         new BarChartPlugin().configure({ key: 'bar' }),
         new BigNumberChartPlugin().configure({ key: 'big_number' }),
         new BigNumberTotalChartPlugin().configure({ key: 'big_number_total' }),
-        new LegacyBoxPlotChartPlugin().configure({ key: 'box_plot' }),
+        new EchartsBoxPlotChartPlugin().configure({ key: 'box_plot' }),
         new BubbleChartPlugin().configure({ key: 'bubble' }),
         new BulletChartPlugin().configure({ key: 'bullet' }),
         new CalendarChartPlugin().configure({ key: 'cal_heatmap' }),
@@ -82,7 +105,14 @@ export default class MainPreset extends Preset {
         new DualLineChartPlugin().configure({ key: 'dual_line' }),
         new EventFlowChartPlugin().configure({ key: 'event_flow' }),
         new FilterBoxChartPlugin().configure({ key: 'filter_box' }),
-        new ForceDirectedChartPlugin().configure({ key: 'directed_force' }),
+        new EchartsFunnelChartPlugin().configure({ key: 'funnel' }),
+        new EchartsTreemapChartPlugin().configure({ key: 'treemap_v2' }),
+        new EchartsGaugeChartPlugin().configure({ key: 'gauge_chart' }),
+        new EchartsGraphChartPlugin().configure({ key: 'graph_chart' }),
+        new EchartsRadarChartPlugin().configure({ key: 'radar' }),
+        new EchartsMixedTimeseriesChartPlugin().configure({
+          key: 'mixed_timeseries',
+        }),
         new HeatmapChartPlugin().configure({ key: 'heatmap' }),
         new HistogramChartPlugin().configure({ key: 'histogram' }),
         new HorizonChartPlugin().configure({ key: 'horizon' }),
@@ -92,8 +122,9 @@ export default class MainPreset extends Preset {
         new PairedTTestChartPlugin().configure({ key: 'paired_ttest' }),
         new ParallelCoordinatesChartPlugin().configure({ key: 'para' }),
         new PartitionChartPlugin().configure({ key: 'partition' }),
-        new PieChartPlugin().configure({ key: 'pie' }),
+        new EchartsPieChartPlugin().configure({ key: 'pie' }),
         new PivotTableChartPlugin().configure({ key: 'pivot_table' }),
+        new PivotTableChartPluginV2().configure({ key: 'pivot_table_v2' }),
         new RoseChartPlugin().configure({ key: 'rose' }),
         new SankeyChartPlugin().configure({ key: 'sankey' }),
         new SunburstChartPlugin().configure({ key: 'sunburst' }),
@@ -106,6 +137,13 @@ export default class MainPreset extends Preset {
         new EchartsTimeseriesChartPlugin().configure({
           key: 'echarts_timeseries',
         }),
+        new SelectFilterPlugin().configure({ key: 'filter_select' }),
+        new RangeFilterPlugin().configure({ key: 'filter_range' }),
+        new TimeFilterPlugin().configure({ key: 'filter_time' }),
+        new TimeColumnFilterPlugin().configure({ key: 'filter_timecolumn' }),
+        new TimeGrainFilterPlugin().configure({ key: 'filter_timegrain' }),
+        new EchartsTreeChartPlugin().configure({ key: 'tree_chart' }),
+        ...experimentalplugins,
       ],
     });
   }

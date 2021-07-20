@@ -18,13 +18,12 @@
  */
 import React from 'react';
 import PropTypes from 'prop-types';
+import { styled } from '@superset-ui/core';
 
 import DashboardComponent from '../../containers/DashboardComponent';
 import DragDroppable from '../dnd/DragDroppable';
 import EditableTitle from '../../../components/EditableTitle';
 import AnchorLink from '../../../components/AnchorLink';
-import DeleteComponentModal from '../DeleteComponentModal';
-import WithPopoverMenu from '../menu/WithPopoverMenu';
 import { componentShape } from '../../util/propShapes';
 
 export const RENDER_TAB = 'RENDER_TAB';
@@ -39,7 +38,6 @@ const propTypes = {
   depth: PropTypes.number.isRequired,
   renderType: PropTypes.oneOf([RENDER_TAB, RENDER_TAB_CONTENT]).isRequired,
   onDropOnTab: PropTypes.func,
-  onDeleteTab: PropTypes.func,
   editMode: PropTypes.bool.isRequired,
   filters: PropTypes.object.isRequired,
 
@@ -52,7 +50,6 @@ const propTypes = {
 
   // redux
   handleComponentDrop: PropTypes.func.isRequired,
-  deleteComponent: PropTypes.func.isRequired,
   updateComponents: PropTypes.func.isRequired,
   setDirectPathToChild: PropTypes.func.isRequired,
 };
@@ -61,28 +58,29 @@ const defaultProps = {
   availableColumnCount: 0,
   columnWidth: 0,
   onDropOnTab() {},
-  onDeleteTab() {},
   onResizeStart() {},
   onResize() {},
   onResizeStop() {},
 };
 
+const TabTitleContainer = styled.div`
+  ${({ isHighlighted, theme: { gridUnit, colors } }) => `
+    padding: ${gridUnit}px ${gridUnit * 2}px;
+    margin: ${-gridUnit}px ${gridUnit * -2}px;
+    transition: box-shadow 0.2s ease-in-out;
+    ${
+      isHighlighted && `box-shadow: 0 0 ${gridUnit}px ${colors.primary.light1};`
+    }
+  `}
+`;
+
 export default class Tab extends React.PureComponent {
   constructor(props) {
     super(props);
-    this.state = {
-      isFocused: false,
-    };
-    this.handleChangeFocus = this.handleChangeFocus.bind(this);
     this.handleChangeText = this.handleChangeText.bind(this);
-    this.handleDeleteComponent = this.handleDeleteComponent.bind(this);
     this.handleDrop = this.handleDrop.bind(this);
     this.handleTopDropTargetDrop = this.handleTopDropTargetDrop.bind(this);
     this.handleChangeTab = this.handleChangeTab.bind(this);
-  }
-
-  handleChangeFocus(nextFocus) {
-    this.setState(() => ({ isFocused: nextFocus }));
   }
 
   handleChangeTab({ pathToTabIndex }) {
@@ -102,12 +100,6 @@ export default class Tab extends React.PureComponent {
         },
       });
     }
-  }
-
-  handleDeleteComponent() {
-    const { index, id, parentId } = this.props;
-    this.props.deleteComponent(id, parentId);
-    this.props.onDeleteTab(index);
   }
 
   handleDrop(dropResult) {
@@ -204,7 +196,6 @@ export default class Tab extends React.PureComponent {
   }
 
   renderTab() {
-    const { isFocused } = this.state;
     const {
       component,
       parentComponent,
@@ -212,12 +203,9 @@ export default class Tab extends React.PureComponent {
       depth,
       editMode,
       filters,
+      isFocused,
+      isHighlighted,
     } = this.props;
-    const deleteTabIcon = (
-      <div className="icon-button">
-        <span className="fa fa-trash" />
-      </div>
-    );
 
     return (
       <DragDroppable
@@ -230,39 +218,31 @@ export default class Tab extends React.PureComponent {
         editMode={editMode}
       >
         {({ dropIndicatorProps, dragSourceRef }) => (
-          <div className="dragdroppable-tab" ref={dragSourceRef}>
-            <WithPopoverMenu
-              onChangeFocus={this.handleChangeFocus}
-              menuItems={
-                parentComponent.children.length <= 1
-                  ? []
-                  : [
-                      <DeleteComponentModal
-                        triggerNode={deleteTabIcon}
-                        onDelete={this.handleDeleteComponent}
-                      />,
-                    ]
-              }
-              editMode={editMode}
-            >
-              <EditableTitle
-                title={component.meta.text}
-                canEdit={editMode && isFocused}
-                onSaveTitle={this.handleChangeText}
-                showTooltip={false}
+          <TabTitleContainer
+            isHighlighted={isHighlighted}
+            className="dragdroppable-tab"
+            ref={dragSourceRef}
+          >
+            <EditableTitle
+              title={component.meta.text}
+              defaultTitle={component.meta.defaultText}
+              placeholder={component.meta.placeholder}
+              canEdit={editMode && isFocused}
+              onSaveTitle={this.handleChangeText}
+              showTooltip={false}
+              editing={editMode && isFocused}
+            />
+            {!editMode && (
+              <AnchorLink
+                anchorLinkId={component.id}
+                filters={filters}
+                showShortLinkButton
+                placement={index >= 5 ? 'left' : 'right'}
               />
-              {!editMode && (
-                <AnchorLink
-                  anchorLinkId={component.id}
-                  filters={filters}
-                  showShortLinkButton
-                  placement={index >= 5 ? 'left' : 'right'}
-                />
-              )}
-            </WithPopoverMenu>
+            )}
 
             {dropIndicatorProps && <div {...dropIndicatorProps} />}
-          </div>
+          </TabTitleContainer>
         )}
       </DragDroppable>
     );

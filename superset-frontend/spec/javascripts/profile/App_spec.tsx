@@ -17,7 +17,7 @@
  * under the License.
  */
 import React from 'react';
-import { Col, Row, Tab } from 'react-bootstrap';
+import { Row, Col } from 'src/common/components';
 import { shallow } from 'enzyme';
 import App from 'src/profile/components/App';
 
@@ -39,6 +39,6 @@ describe('App', () => {
 
   it('renders 4 Tabs', () => {
     const wrapper = shallow(<App {...mockedProps} />);
-    expect(wrapper.find(Tab)).toHaveLength(4);
+    expect(wrapper.find('[tab]')).toHaveLength(4);
   });
 });

@@ -17,85 +17,74 @@
  * under the License.
  */
 import React from 'react';
-import { Col, Row, Tabs, Tab, Panel } from 'react-bootstrap';
-import { t } from '@superset-ui/core';
-
+import { t, styled } from '@superset-ui/core';
+import { Row, Col } from 'src/common/components';
+import Tabs from 'src/components/Tabs';
+import { UserWithPermissionsAndRoles } from 'src/types/bootstrapTypes';
 import Favorites from './Favorites';
 import UserInfo from './UserInfo';
 import Security from './Security';
 import RecentActivity from './RecentActivity';
 import CreatedContent from './CreatedContent';
-import { UserWithPermissionsAndRoles } from '../../types/bootstrapTypes';
 
 interface AppProps {
   user: UserWithPermissionsAndRoles;
 }
 
+const StyledTabPane = styled(Tabs.TabPane)`
+  background-color: ${({ theme }) => theme.colors.grayscale.light5};
+  padding: ${({ theme }) => theme.gridUnit * 4}px;
+`;
+
 export default function App({ user }: AppProps) {
   return (
     <div className="container app">
-      <Row>
-        <Col md={3}>
+      <Row gutter={16}>
+        <Col xs={24} md={6}>
           <UserInfo user={user} />
         </Col>
-        <Col md={9}>
-          <Tabs id="options">
-            <Tab
-              eventKey={1}
-              title={
+        <Col xs={24} md={18}>
+          <Tabs centered>
+            <StyledTabPane
+              key="1"
+              tab={
                 <div>
                   <i className="fa fa-star" /> {t('Favorites')}
                 </div>
               }
             >
-              <Panel>
-                <Panel.Body>
-                  <Favorites user={user} />
-                </Panel.Body>
-              </Panel>
-            </Tab>
-            <Tab
-              eventKey={2}
-              title={
+              <Favorites user={user} />
+            </StyledTabPane>
+            <StyledTabPane
+              key="2"
+              tab={
                 <div>
-                  <i className="fa fa-paint-brush" /> {t('Created Content')}
+                  <i className="fa fa-paint-brush" /> {t('Created content')}
                 </div>
               }
             >
-              <Panel>
-                <Panel.Body>
-                  <CreatedContent user={user} />
-                </Panel.Body>
-              </Panel>
-            </Tab>
-            <Tab
-              eventKey={3}
-              title={
+              <CreatedContent user={user} />
+            </StyledTabPane>
+            <StyledTabPane
+              key="3"
+              tab={
                 <div>
-                  <i className="fa fa-list" /> {t('Recent Activity')}
+                  <i className="fa fa-list" /> {t('Recent activity')}
                 </div>
               }
             >
-              <Panel>
-                <Panel.Body>
-                  <RecentActivity user={user} />
-                </Panel.Body>
-              </Panel>
-            </Tab>
-            <Tab
-              eventKey={4}
-              title={
+              <RecentActivity user={user} />
+            </StyledTabPane>
+            <StyledTabPane
+              key="4"
+              tab={
                 <div>
                   <i className="fa fa-lock" /> {t('Security & Access')}
                 </div>
               }
             >
-              <Panel>
-                <Panel.Body>
-                  <Security user={user} />
-                </Panel.Body>
-              </Panel>
-            </Tab>
+              <Security user={user} />
+            </StyledTabPane>
           </Tabs>
         </Col>
       </Row>

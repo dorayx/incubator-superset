@@ -15,25 +15,28 @@
 # specific language governing permissions and limitations
 # under the License.
 import json
+from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Hashable, List, Optional, Type, Union
+from typing import Any, Dict, Hashable, List, Optional, Set, Type, Union
 
 from flask_appbuilder.security.sqla.models import User
 from sqlalchemy import and_, Boolean, Column, Integer, String, Text
 from sqlalchemy.ext.declarative import declared_attr
-from sqlalchemy.orm import foreign, Query, relationship, RelationshipProperty
+from sqlalchemy.orm import foreign, Query, relationship, RelationshipProperty, Session
 
 from superset import security_manager
 from superset.constants import NULL_STRING
-from superset.models.helpers import AuditMixinNullable, ImportMixin, QueryResult
+from superset.models.helpers import AuditMixinNullable, ImportExportMixin, QueryResult
 from superset.models.slice import Slice
 from superset.typing import FilterValue, FilterValues, QueryObjectDict
 from superset.utils import core as utils
+from superset.utils.core import GenericDataType
 
 METRIC_FORM_DATA_PARAMS = [
     "metric",
-    "metrics",
     "metric_2",
+    "metrics",
+    "metrics_b",
     "percent_metrics",
     "secondary_metric",
     "size",
@@ -59,7 +62,7 @@ class DatasourceKind(str, Enum):
 
 
 class BaseDatasource(
-    AuditMixinNullable, ImportMixin
+    AuditMixinNullable, ImportExportMixin
 ):  # pylint: disable=too-many-public-methods
     """A common interface to objects that are queryable
     (tables and datasources)"""
@@ -112,11 +115,12 @@ class BaseDatasource(
     update_from_object_fields: List[str]
 
     @property
-    def kind(self) -> str:
-        if self.sql:
-            return DatasourceKind.VIRTUAL.value
+    def kind(self) -> DatasourceKind:
+        return DatasourceKind.VIRTUAL if self.sql else DatasourceKind.PHYSICAL
 
-        return DatasourceKind.PHYSICAL.value
+    @property
+    def is_virtual(self) -> bool:
+        return self.kind == DatasourceKind.VIRTUAL
 
     @declared_attr
     def slices(self) -> RelationshipProperty:
@@ -128,10 +132,8 @@ class BaseDatasource(
             ),
         )
 
-    # placeholder for a relationship to a derivative of BaseColumn
-    columns: List[Any] = []
-    # placeholder for a relationship to a derivative of BaseMetric
-    metrics: List[Any] = []
+    columns: List["BaseColumn"] = []
+    metrics: List["BaseMetric"] = []
 
     @property
     def type(self) -> str:
@@ -239,6 +241,7 @@ class BaseDatasource(
         return {
             # simple fields
             "id": self.id,
+            "uid": self.uid,
             "column_formats": self.column_formats,
             "description": self.description,
             "database": self.database.data,  # pylint: disable=no-member
@@ -247,6 +250,7 @@ class BaseDatasource(
             "filter_select_enabled": self.filter_select_enabled,
             "name": self.name,
             "datasource_name": self.datasource_name,
+            "table_name": self.datasource_name,
             "type": self.type,
             "schema": self.schema,
             "offset": self.offset,
@@ -304,12 +308,16 @@ class BaseDatasource(
             if metric["metric_name"] in metric_names
         ]
 
-        filtered_columns = [
-            column
-            for column in data["columns"]
-            if column["column_name"] in column_names
-        ]
+        filtered_columns: List[Column] = []
+        column_types: Set[GenericDataType] = set()
+        for column in data["columns"]:
+            generic_type = column.get("type_generic")
+            if generic_type is not None:
+                column_types.add(generic_type)
+            if column["column_name"] in column_names:
+                filtered_columns.append(column)
 
+        data["column_types"] = list(column_types)
         del data["description"]
         data.update({"metrics": filtered_metrics})
         data.update({"columns": filtered_columns})
@@ -333,7 +341,7 @@ class BaseDatasource(
     @staticmethod
     def filter_values_handler(
         values: Optional[FilterValues],
-        target_column_is_numeric: bool = False,
+        target_column_type: utils.GenericDataType,
         is_list_target: bool = False,
     ) -> Optional[FilterValues]:
         if values is None:
@@ -341,12 +349,18 @@ class BaseDatasource(
 
         def handle_single_value(value: Optional[FilterValue]) -> Optional[FilterValue]:
             # backward compatibility with previous <select> components
+            if (
+                isinstance(value, (float, int))
+                and target_column_type == utils.GenericDataType.TEMPORAL
+            ):
+                return datetime.utcfromtimestamp(value / 1000)
             if isinstance(value, str):
                 value = value.strip("\t\n'\"")
-                if target_column_is_numeric:
+
+                if target_column_type == utils.GenericDataType.NUMERIC:
                     # For backwards compatibility and edge cases
                     # where a column data type might have changed
-                    value = utils.cast_to_num(value)
+                    return utils.cast_to_num(value)
                 if value == NULL_STRING:
                     return None
                 if value == "<empty string>":
@@ -360,10 +374,7 @@ class BaseDatasource(
         if is_list_target and not isinstance(values, (tuple, list)):
             values = [values]  # type: ignore
         elif not is_list_target and isinstance(values, (tuple, list)):
-            if values:
-                values = values[0]
-            else:
-                values = None
+            values = values[0] if values else None
         return values
 
     def external_metadata(self) -> List[Dict[str, str]]:
@@ -481,7 +492,7 @@ class BaseDatasource(
     def get_extra_cache_keys(  # pylint: disable=no-self-use
         self, query_obj: QueryObjectDict  # pylint: disable=unused-argument
     ) -> List[Hashable]:
-        """ If a datasource needs to provide additional keys for calculation of
+        """If a datasource needs to provide additional keys for calculation of
         cache keys, those can be provided via this method
 
         :param query_obj: The dict representation of a query object
@@ -506,8 +517,14 @@ class BaseDatasource(
 
         security_manager.raise_for_access(datasource=self)
 
+    @classmethod
+    def get_datasource_by_name(
+        cls, session: Session, datasource_name: str, schema: str, database_name: str
+    ) -> Optional["BaseDatasource"]:
+        raise NotImplementedError()
 
-class BaseColumn(AuditMixinNullable, ImportMixin):
+
+class BaseColumn(AuditMixinNullable, ImportExportMixin):
     """Interface for column"""
 
     __tablename__: Optional[str] = None  # {connector_name}_column
@@ -528,6 +545,7 @@ class BaseColumn(AuditMixinNullable, ImportMixin):
     def __repr__(self) -> str:
         return str(self.column_name)
 
+    bool_types = ("BOOL",)
     num_types = (
         "DOUBLE",
         "FLOAT",
@@ -556,6 +574,22 @@ class BaseColumn(AuditMixinNullable, ImportMixin):
         return self.type and any(map(lambda t: t in self.type.upper(), self.str_types))
 
     @property
+    def is_boolean(self) -> bool:
+        return self.type and any(map(lambda t: t in self.type.upper(), self.bool_types))
+
+    @property
+    def type_generic(self) -> Optional[utils.GenericDataType]:
+        if self.is_string:
+            return utils.GenericDataType.STRING
+        if self.is_boolean:
+            return utils.GenericDataType.BOOLEAN
+        if self.is_numeric:
+            return utils.GenericDataType.NUMERIC
+        if self.is_temporal:
+            return utils.GenericDataType.TEMPORAL
+        return None
+
+    @property
     def expression(self) -> Column:
         raise NotImplementedError()
 
@@ -579,7 +613,7 @@ class BaseColumn(AuditMixinNullable, ImportMixin):
         return {s: getattr(self, s) for s in attrs if hasattr(self, s)}
 
 
-class BaseMetric(AuditMixinNullable, ImportMixin):
+class BaseMetric(AuditMixinNullable, ImportExportMixin):
 
     """Interface for Metrics"""
 

@@ -23,12 +23,10 @@ from sqlalchemy import Column, Integer, String
 from superset import app, db, security_manager
 from superset.connectors.connector_registry import ConnectorRegistry
 from superset.models.helpers import AuditMixinNullable
-from superset.utils import core as utils
+from superset.utils.memoized import memoized
 
 if TYPE_CHECKING:
-    from superset.connectors.base.models import (  # pylint: disable=unused-import
-        BaseDatasource,
-    )
+    from superset.connectors.base.models import BaseDatasource
 
 config = app.config
 
@@ -57,7 +55,7 @@ class DatasourceAccessRequest(Model, AuditMixinNullable):
         return self.get_datasource
 
     @datasource.getter  # type: ignore
-    @utils.memoized
+    @memoized
     def get_datasource(self) -> "BaseDatasource":
         ds = db.session.query(self.cls_model).filter_by(id=self.datasource_id).first()
         return ds
@@ -74,7 +72,6 @@ class DatasourceAccessRequest(Model, AuditMixinNullable):
         for role in pv.role:
             if role.name in self.ROLES_DENYLIST:
                 continue
-            # pylint: disable=no-member
             href = (
                 f"/superset/approve?datasource_type={self.datasource_type}&"
                 f"datasource_id={self.datasource_id}&"
@@ -87,8 +84,7 @@ class DatasourceAccessRequest(Model, AuditMixinNullable):
     @property
     def user_roles(self) -> str:
         action_list = ""
-        for role in self.created_by.roles:  # pylint: disable=no-member
-            # pylint: disable=no-member
+        for role in self.created_by.roles:
             href = (
                 f"/superset/approve?datasource_type={self.datasource_type}&"
                 f"datasource_id={self.datasource_id}&"

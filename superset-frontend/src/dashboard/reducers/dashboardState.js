@@ -33,12 +33,18 @@ import {
   UPDATE_CSS,
   SET_REFRESH_FREQUENCY,
   SET_DIRECT_PATH,
-  SET_MOUNTED_TAB,
   SET_FOCUSED_FILTER_FIELD,
+  UNSET_FOCUSED_FILTER_FIELD,
+  SET_ACTIVE_TABS,
+  SET_FULL_SIZE_CHART_ID,
 } from '../actions/dashboardState';
+import { HYDRATE_DASHBOARD } from '../actions/hydrate';
 
 export default function dashboardStateReducer(state = {}, action) {
   const actionHandlers = {
+    [HYDRATE_DASHBOARD]() {
+      return { ...state, ...action.data.dashboardState };
+    },
     [UPDATE_CSS]() {
       return { ...state, css: action.css };
     },
@@ -106,6 +112,8 @@ export default function dashboardStateReducer(state = {}, action) {
         maxUndoHistoryExceeded: false,
         editMode: false,
         updatedColorScheme: false,
+        // server-side returns last_modified_time for latest change
+        lastModifiedTime: action.lastModifiedTime,
       };
     },
     [SET_UNSAVED_CHANGES]() {
@@ -123,32 +131,45 @@ export default function dashboardStateReducer(state = {}, action) {
     [SET_DIRECT_PATH]() {
       return {
         ...state,
-        // change of direct path (tabs) will reset current mounted tab
-        mountedTab: null,
         directPathToChild: action.path,
         directPathLastUpdated: Date.now(),
       };
     },
-    [SET_MOUNTED_TAB]() {
-      // set current mounted tab after tab is really mounted to DOM
+    [SET_ACTIVE_TABS]() {
       return {
         ...state,
-        mountedTab: action.mountedTab,
+        activeTabs: action.tabIds,
       };
     },
     [SET_FOCUSED_FILTER_FIELD]() {
-      const { focusedFilterField } = state;
-      if (action.chartId && action.column) {
-        focusedFilterField.push({
+      return {
+        ...state,
+        focusedFilterField: {
           chartId: action.chartId,
           column: action.column,
-        });
-      } else {
-        focusedFilterField.shift();
+        },
+      };
+    },
+    [UNSET_FOCUSED_FILTER_FIELD]() {
+      // dashboard only has 1 focused filter field at a time,
+      // but when user switch different filter boxes,
+      // browser didn't always fire onBlur and onFocus events in order.
+      if (
+        !state.focusedFilterField ||
+        action.chartId !== state.focusedFilterField.chartId ||
+        action.column !== state.focusedFilterField.column
+      ) {
+        return state;
       }
       return {
         ...state,
-        focusedFilterField,
+        focusedFilterField: null,
+      };
+    },
+    [SET_FULL_SIZE_CHART_ID]() {
+      return {
+        ...state,
+        fullSizeChartId: action.chartId,
       };
     },
   };

@@ -20,6 +20,9 @@ import { Provider } from 'react-redux';
 import React from 'react';
 import { mount } from 'enzyme';
 import sinon from 'sinon';
+import { supersetTheme, ThemeProvider } from '@superset-ui/core';
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 
 import BackgroundStyleDropdown from 'src/dashboard/components/menu/BackgroundStyleDropdown';
 import Column from 'src/dashboard/components/gridComponents/Column';
@@ -31,9 +34,9 @@ import IconButton from 'src/dashboard/components/IconButton';
 import ResizableContainer from 'src/dashboard/components/resizable/ResizableContainer';
 import WithPopoverMenu from 'src/dashboard/components/menu/WithPopoverMenu';
 
-import { mockStore } from '../../fixtures/mockStore';
-import { dashboardLayout as mockLayout } from '../../fixtures/mockDashboardLayout';
-import WithDragDropContext from '../../helpers/WithDragDropContext';
+import { getMockStore } from 'spec/fixtures/mockStore';
+import { dashboardLayout as mockLayout } from 'spec/fixtures/mockDashboardLayout';
+import { initialState } from 'spec/javascripts/sqllab/fixtures';
 
 describe('Column', () => {
   const columnWithoutChildren = {
@@ -63,12 +66,19 @@ describe('Column', () => {
   function setup(overrideProps) {
     // We have to wrap provide DragDropContext for the underlying DragDroppable
     // otherwise we cannot assert on DragDroppable children
+    const mockStore = getMockStore({
+      ...initialState,
+    });
     const wrapper = mount(
       <Provider store={mockStore}>
-        <WithDragDropContext>
+        <DndProvider backend={HTML5Backend}>
           <Column {...props} {...overrideProps} />
-        </WithDragDropContext>
+        </DndProvider>
       </Provider>,
+      {
+        wrappingComponent: ThemeProvider,
+        wrappingComponentProps: { theme: supersetTheme },
+      },
     );
     return wrapper;
   }

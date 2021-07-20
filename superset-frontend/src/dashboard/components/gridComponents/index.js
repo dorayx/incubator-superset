@@ -34,7 +34,7 @@ import Divider from './Divider';
 import Header from './Header';
 import Row from './Row';
 import Tab from './Tab';
-import Tabs from './Tabs';
+import TabsConnected from './Tabs';
 
 export { default as ChartHolder } from './ChartHolder';
 export { default as Markdown } from './Markdown';
@@ -45,7 +45,7 @@ export { default as Row } from './Row';
 export { default as Tab } from './Tab';
 export { default as Tabs } from './Tabs';
 
-export default {
+export const componentLookup = {
   [CHART_TYPE]: ChartHolder,
   [MARKDOWN_TYPE]: Markdown,
   [COLUMN_TYPE]: Column,
@@ -53,5 +53,5 @@ export default {
   [HEADER_TYPE]: Header,
   [ROW_TYPE]: Row,
   [TAB_TYPE]: Tab,
-  [TABS_TYPE]: Tabs,
+  [TABS_TYPE]: TabsConnected,
 };

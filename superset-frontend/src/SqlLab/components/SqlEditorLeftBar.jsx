@@ -19,13 +19,16 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import Button from 'src/components/Button';
-import { t } from '@superset-ui/core';
+import { t, styled, css } from '@superset-ui/core';
+import Collapse from 'src/components/Collapse';
+import Icons from 'src/components/Icons';
 import TableElement from './TableElement';
 import TableSelector from '../../components/TableSelector';
+import { IconTooltip } from '../../components/IconTooltip';
 
 const propTypes = {
   queryEditor: PropTypes.object.isRequired,
-  height: PropTypes.number.isRequired,
+  height: PropTypes.number,
   tables: PropTypes.array,
   actions: PropTypes.object,
   database: PropTypes.object,
@@ -39,6 +42,15 @@ const defaultProps = {
   tables: [],
 };
 
+const StyledScrollbarContainer = styled.div`
+  flex: 1 1 auto;
+  overflow: auto;
+`;
+
+const StyledScrollbarContent = styled.div`
+  height: ${props => props.contentHeight}px;
+`;
+
 export default class SqlEditorLeftBar extends React.PureComponent {
   constructor(props) {
     super(props);
@@ -49,6 +61,7 @@ export default class SqlEditorLeftBar extends React.PureComponent {
     this.onDbChange = this.onDbChange.bind(this);
     this.getDbList = this.getDbList.bind(this);
     this.onTableChange = this.onTableChange.bind(this);
+    this.onToggleTable = this.onToggleTable.bind(this);
   }
 
   onSchemaChange(schema) {
@@ -71,10 +84,24 @@ export default class SqlEditorLeftBar extends React.PureComponent {
 
   onDbChange(db) {
     this.props.actions.queryEditorSetDb(this.props.queryEditor, db.id);
+    this.props.actions.queryEditorSetFunctionNames(
+      this.props.queryEditor,
+      db.id,
+    );
   }
 
   onTableChange(tableName, schemaName) {
     this.props.actions.addTable(this.props.queryEditor, tableName, schemaName);
+  }
+
+  onToggleTable(tables) {
+    this.props.tables.forEach(table => {
+      if (!tables.includes(table.id.toString()) && table.expanded) {
+        this.props.actions.collapseTable(table);
+      } else if (tables.includes(table.id.toString()) && !table.expanded) {
+        this.props.actions.expandTable(table);
+      }
+    });
   }
 
   getDbList(dbs) {
@@ -109,9 +136,22 @@ export default class SqlEditorLeftBar extends React.PureComponent {
     this.props.actions.addTable(this.props.queryEditor, tableName, schemaName);
   }
 
-  closePopover(ref) {
-    this.refs[ref].hide();
-  }
+  renderExpandIconWithTooltip = ({ isActive }) => (
+    <IconTooltip
+      css={css`
+        transform: rotate(90deg);
+      `}
+      aria-label="Collapse"
+      tooltip={t(`${isActive ? 'Collapse' : 'Expand'} table preview`)}
+    >
+      <Icons.RightOutlined
+        iconSize="s"
+        css={css`
+          transform: ${isActive ? 'rotateY(180deg)' : ''};
+        `}
+      />
+    </IconTooltip>
+  );
 
   render() {
     const shouldShowReset = window.location.search === '?reset=1';
@@ -120,40 +160,68 @@ export default class SqlEditorLeftBar extends React.PureComponent {
     return (
       <div className="SqlEditorLeftBar">
         <TableSelector
+          database={this.props.database}
           dbId={qe.dbId}
-          schema={qe.schema}
+          getDbList={this.getDbList}
+          handleError={this.props.actions.addDangerToast}
           onDbChange={this.onDbChange}
           onSchemaChange={this.onSchemaChange}
           onSchemasLoad={this.onSchemasLoad}
-          onTablesLoad={this.onTablesLoad}
-          getDbList={this.getDbList}
           onTableChange={this.onTableChange}
+          onTablesLoad={this.onTablesLoad}
+          schema={qe.schema}
+          sqlLabMode
           tableNameSticky={false}
-          database={this.props.database}
-          handleError={this.props.actions.addDangerToast}
         />
         <div className="divider" />
-        <div className="scrollbar-container">
-          <div
-            className="scrollbar-content"
-            style={{ height: tableMetaDataHeight }}
-          >
-            {this.props.tables.map(table => (
-              <TableElement
-                table={table}
-                key={table.id}
-                actions={this.props.actions}
-              />
-            ))}
-          </div>
-        </div>
+        <StyledScrollbarContainer>
+          <StyledScrollbarContent contentHeight={tableMetaDataHeight}>
+            <Collapse
+              activeKey={this.props.tables
+                .filter(({ expanded }) => expanded)
+                .map(({ id }) => id)}
+              css={theme => css`
+                .ant-collapse-item {
+                  margin-bottom: ${theme.gridUnit * 3}px;
+                }
+                .ant-collapse-header {
+                  padding: 0px !important;
+                  display: flex;
+                  align-items: center;
+                }
+                .ant-collapse-content-box {
+                  padding: 0px ${theme.gridUnit * 4}px 0px 0px !important;
+                }
+                .ant-collapse-arrow {
+                  top: ${theme.gridUnit * 2}px !important;
+                  color: ${theme.colors.primary.dark1} !important;
+                  &: hover {
+                    color: ${theme.colors.primary.dark2} !important;
+                  }
+                }
+              `}
+              expandIconPosition="right"
+              ghost
+              onChange={this.onToggleTable}
+              expandIcon={this.renderExpandIconWithTooltip}
+            >
+              {this.props.tables.map(table => (
+                <TableElement
+                  table={table}
+                  key={table.id}
+                  actions={this.props.actions}
+                />
+              ))}
+            </Collapse>
+          </StyledScrollbarContent>
+        </StyledScrollbarContainer>
         {shouldShowReset && (
           <Button
             buttonSize="small"
             buttonStyle="danger"
             onClick={this.resetState}
           >
-            <i className="fa fa-bomb" /> {t('Reset State')}
+            <i className="fa fa-bomb" /> {t('Reset state')}
           </Button>
         )}
       </div>

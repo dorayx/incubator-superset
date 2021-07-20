@@ -18,8 +18,9 @@
  */
 import React, { ReactNode } from 'react';
 import shortid from 'shortid';
-import { t } from '@superset-ui/core';
+import { t, styled } from '@superset-ui/core';
 import Button from 'src/components/Button';
+import Icons from 'src/components/Icons';
 import Fieldset from './Fieldset';
 import { recurseReactClone } from './utils';
 import './crud.less';
@@ -29,9 +30,9 @@ interface CRUDCollectionProps {
   allowDeletes?: boolean;
   collection: Array<object>;
   columnLabels?: object;
-  emptyMessage: ReactNode;
-  expandFieldset: ReactNode;
-  extraButtons: ReactNode;
+  emptyMessage?: ReactNode;
+  expandFieldset?: ReactNode;
+  extraButtons?: ReactNode;
   itemGenerator?: () => any;
   itemRenderers?: ((
     val: unknown,
@@ -41,11 +42,28 @@ interface CRUDCollectionProps {
   ) => ReactNode)[];
   onChange?: (arg0: any) => void;
   tableColumns: Array<any>;
+  sortColumns: Array<string>;
+  stickyHeader?: boolean;
+}
+
+type Sort = number | string | boolean | any;
+
+enum SortOrder {
+  asc = 1,
+  desc = 2,
+  unsort = 0,
 }
 
 interface CRUDCollectionState {
   collection: object;
+  collectionArray: Array<object>;
   expandedColumns: object;
+  sortColumn: string;
+  sort: SortOrder;
+}
+
+function createCollectionArray(collection: object) {
+  return Object.keys(collection).map(k => collection[k]);
 }
 
 function createKeyedCollection(arr: Array<object>) {
@@ -60,15 +78,49 @@ function createKeyedCollection(arr: Array<object>) {
   return map;
 }
 
+const CrudTableWrapper = styled.div<{ stickyHeader?: boolean }>`
+  ${({ stickyHeader }) =>
+    stickyHeader &&
+    `
+      height: 350px;
+      overflow-y: auto;
+      overflow-x: auto;
+
+      .table {
+        min-width: 800px;
+      }
+      thead th {
+        background: #fff;
+        position: sticky;
+        top: 0;
+        z-index: 9;
+        min
+      }
+    `}
+  th span {
+    vertical-align: ${({ theme }) => theme.gridUnit * -2}px;
+  }
+`;
+
+const CrudButtonWrapper = styled.div`
+  text-align: right;
+  ${({ theme }) => `margin-bottom: ${theme.gridUnit * 2}px`}
+`;
+
 export default class CRUDCollection extends React.PureComponent<
   CRUDCollectionProps,
   CRUDCollectionState
 > {
   constructor(props: CRUDCollectionProps) {
     super(props);
+
+    const collection = createKeyedCollection(props.collection);
     this.state = {
       expandedColumns: {},
-      collection: createKeyedCollection(props.collection),
+      collection,
+      collectionArray: createCollectionArray(collection),
+      sortColumn: '',
+      sort: 0,
     };
     this.renderItem = this.renderItem.bind(this);
     this.onAddItem = this.onAddItem.bind(this);
@@ -77,12 +129,16 @@ export default class CRUDCollection extends React.PureComponent<
     this.onFieldsetChange = this.onFieldsetChange.bind(this);
     this.renderTableBody = this.renderTableBody.bind(this);
     this.changeCollection = this.changeCollection.bind(this);
+    this.sortColumn = this.sortColumn.bind(this);
+    this.renderSortIcon = this.renderSortIcon.bind(this);
   }
 
   UNSAFE_componentWillReceiveProps(nextProps: CRUDCollectionProps) {
     if (nextProps.collection !== this.props.collection) {
+      const collection = createKeyedCollection(nextProps.collection);
       this.setState({
-        collection: createKeyedCollection(nextProps.collection),
+        collection,
+        collectionArray: createCollectionArray(collection),
       });
     }
   }
@@ -158,31 +214,77 @@ export default class CRUDCollection extends React.PureComponent<
     }));
   }
 
+  sortColumn(col: string, sort = SortOrder.unsort) {
+    const { sortColumns } = this.props;
+    // default sort logic sorting string, boolean and number
+    const compareSort = (m: Sort, n: Sort) => {
+      if (typeof m === 'string') {
+        return (m || ' ').localeCompare(n);
+      }
+      return m - n;
+    };
+    return () => {
+      if (sortColumns?.includes(col)) {
+        // display in unsorted order if no sort specified
+        if (sort === SortOrder.unsort) {
+          const collection = createKeyedCollection(this.props.collection);
+          this.setState({
+            collectionArray: createCollectionArray(collection),
+            sortColumn: '',
+            sort,
+          });
+          return;
+        }
+
+        this.setState(prevState => {
+          // newly ordered collection
+          const sorted = [
+            ...prevState.collectionArray,
+          ].sort((a: object, b: object) => compareSort(a[col], b[col]));
+          const newCollection =
+            sort === SortOrder.asc ? sorted : sorted.reverse();
+          return {
+            ...prevState,
+            collectionArray: newCollection,
+            sortColumn: col,
+            sort,
+          };
+        });
+      }
+    };
+  }
+
+  renderSortIcon(col: string) {
+    if (this.state.sortColumn === col && this.state.sort === SortOrder.asc) {
+      return <Icons.SortAsc onClick={this.sortColumn(col, 2)} />;
+    }
+    if (this.state.sortColumn === col && this.state.sort === SortOrder.desc) {
+      return <Icons.SortDesc onClick={this.sortColumn(col, 0)} />;
+    }
+    return <Icons.Sort onClick={this.sortColumn(col, 1)} />;
+  }
+
   renderHeaderRow() {
     const cols = this.effectiveTableColumns();
     const {
-      allowAddItem,
       allowDeletes,
       expandFieldset,
       extraButtons,
+      sortColumns,
     } = this.props;
     return (
       <thead>
         <tr>
           {expandFieldset && <th aria-label="Expand" className="tiny-cell" />}
           {cols.map(col => (
-            <th key={col}>{this.getLabel(col)}</th>
+            <th key={col}>
+              {this.getLabel(col)}
+              {sortColumns?.includes(col) && this.renderSortIcon(col)}
+            </th>
           ))}
           {extraButtons}
-          {allowDeletes && !allowAddItem && (
+          {allowDeletes && (
             <th key="delete-item" aria-label="Delete" className="tiny-cell" />
-          )}
-          {allowAddItem && (
-            <th key="add-item">
-              <Button buttonStyle="primary" onClick={this.onAddItem}>
-                <i className="fa fa-plus" /> {t('Add Item')}
-              </Button>
-            </th>
           )}
         </tr>
       </thead>
@@ -241,19 +343,24 @@ export default class CRUDCollection extends React.PureComponent<
     }
     if (allowDeletes) {
       tds.push(
-        <td key="__actions">
-          <i
-            role="button"
+        <td
+          key="__actions"
+          data-test="crud-delete-option"
+          className="text-primary"
+        >
+          <Icons.Trash
             aria-label="Delete item"
+            className="pointer"
+            data-test="crud-delete-icon"
+            role="button"
             tabIndex={0}
-            className="fa fa-trash text-primary pointer"
             onClick={this.deleteItem.bind(this, record.id)}
           />
         </td>,
       );
     }
     const trs = [
-      <tr className="row" key={record.id}>
+      <tr {...{ 'data-test': 'table-row' }} className="row" key={record.id}>
         {tds}
       </tr>,
     ];
@@ -281,23 +388,41 @@ export default class CRUDCollection extends React.PureComponent<
   }
 
   renderTableBody() {
-    const data = Object.keys(this.state.collection).map(
-      k => this.state.collection[k],
-    );
+    const data = this.state.collectionArray;
     const content = data.length
       ? data.map(d => this.renderItem(d))
       : this.renderEmptyCell();
-    return <tbody>{content}</tbody>;
+    return <tbody data-test="table-content-rows">{content}</tbody>;
   }
 
   render() {
     return (
-      <div className="CRUD">
-        <table className="table">
-          {this.renderHeaderRow()}
-          {this.renderTableBody()}
-        </table>
-      </div>
+      <>
+        <CrudButtonWrapper>
+          {this.props.allowAddItem && (
+            <span className="m-t-10 m-r-10">
+              <Button
+                buttonSize="small"
+                buttonStyle="primary"
+                onClick={this.onAddItem}
+                data-test="add-item-button"
+              >
+                <i data-test="crud-add-table-item" className="fa fa-plus" />{' '}
+                {t('Add item')}
+              </Button>
+            </span>
+          )}
+        </CrudButtonWrapper>
+        <CrudTableWrapper
+          className="CRUD"
+          stickyHeader={this.props.stickyHeader}
+        >
+          <table data-test="crud-table" className="table">
+            {this.renderHeaderRow()}
+            {this.renderTableBody()}
+          </table>
+        </CrudTableWrapper>
+      </>
     );
   }
 }

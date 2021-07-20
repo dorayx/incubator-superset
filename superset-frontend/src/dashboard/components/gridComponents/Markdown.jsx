@@ -18,24 +18,24 @@
  */
 import React from 'react';
 import PropTypes from 'prop-types';
-import ReactMarkdown from 'react-markdown';
+
 import cx from 'classnames';
-import { t } from '@superset-ui/core';
+import { t, SafeMarkdown } from '@superset-ui/core';
 import { Logger, LOG_ACTIONS_RENDER_CHART } from 'src/logger/LogUtils';
 import { MarkdownEditor } from 'src/components/AsyncAceEditor';
 
-import DeleteComponentButton from '../DeleteComponentButton';
-import DragDroppable from '../dnd/DragDroppable';
-import ResizableContainer from '../resizable/ResizableContainer';
-import MarkdownModeDropdown from '../menu/MarkdownModeDropdown';
-import WithPopoverMenu from '../menu/WithPopoverMenu';
-import { componentShape } from '../../util/propShapes';
-import { ROW_TYPE, COLUMN_TYPE } from '../../util/componentTypes';
+import DeleteComponentButton from 'src/dashboard/components/DeleteComponentButton';
+import DragDroppable from 'src/dashboard/components/dnd/DragDroppable';
+import ResizableContainer from 'src/dashboard/components/resizable/ResizableContainer';
+import MarkdownModeDropdown from 'src/dashboard/components/menu/MarkdownModeDropdown';
+import WithPopoverMenu from 'src/dashboard/components/menu/WithPopoverMenu';
+import { componentShape } from 'src/dashboard/util/propShapes';
+import { ROW_TYPE, COLUMN_TYPE } from 'src/dashboard/util/componentTypes';
 import {
   GRID_MIN_COLUMN_COUNT,
   GRID_MIN_ROW_UNITS,
   GRID_BASE_UNIT,
-} from '../../util/constants';
+} from 'src/dashboard/util/constants';
 
 const propTypes = {
   id: PropTypes.string.isRequired,
@@ -77,13 +77,6 @@ Click here to edit [markdown](https://bit.ly/1dQOfRK)`;
 
 const MARKDOWN_ERROR_MESSAGE = t('This markdown component has an error.');
 
-function isSafeMarkup(node) {
-  if (node.type === 'html') {
-    return /href="(javascript|vbscript|file):.*"/gim.test(node.value) === false;
-  }
-
-  return true;
-}
 class Markdown extends React.PureComponent {
   constructor(props) {
     super(props);
@@ -101,6 +94,7 @@ class Markdown extends React.PureComponent {
     this.handleChangeEditorMode = this.handleChangeEditorMode.bind(this);
     this.handleMarkdownChange = this.handleMarkdownChange.bind(this);
     this.handleDeleteComponent = this.handleDeleteComponent.bind(this);
+    this.handleResizeStart = this.handleResizeStart.bind(this);
     this.setEditor = this.setEditor.bind(this);
   }
 
@@ -199,24 +193,27 @@ class Markdown extends React.PureComponent {
       ...this.state,
       editorMode: mode,
     };
-
     if (mode === 'preview') {
-      const { updateComponents, component } = this.props;
-      if (component.meta.code !== this.state.markdownSource) {
-        updateComponents({
-          [component.id]: {
-            ...component,
-            meta: {
-              ...component.meta,
-              code: this.state.markdownSource,
-            },
-          },
-        });
-      }
+      this.updateMarkdownContent();
       nextState.hasError = false;
     }
 
     this.setState(nextState);
+  }
+
+  updateMarkdownContent() {
+    const { updateComponents, component } = this.props;
+    if (component.meta.code !== this.state.markdownSource) {
+      updateComponents({
+        [component.id]: {
+          ...component,
+          meta: {
+            ...component.meta,
+            code: this.state.markdownSource,
+          },
+        },
+      });
+    }
   }
 
   handleMarkdownChange(nextValue) {
@@ -230,6 +227,16 @@ class Markdown extends React.PureComponent {
     deleteComponent(id, parentId);
   }
 
+  handleResizeStart(e) {
+    const { editorMode } = this.state;
+    const { editMode, onResizeStart } = this.props;
+    const isEditing = editorMode === 'edit';
+    onResizeStart(e);
+    if (editMode && isEditing) {
+      this.updateMarkdownContent();
+    }
+  }
+
   renderEditMode() {
     return (
       <MarkdownEditor
@@ -239,28 +246,28 @@ class Markdown extends React.PureComponent {
         showGutter={false}
         editorProps={{ $blockScrolling: true }}
         value={
-          // thisl allows "select all => delete" to give an empty editor
+          // this allows "select all => delete" to give an empty editor
           typeof this.state.markdownSource === 'string'
             ? this.state.markdownSource
             : MARKDOWN_PLACE_HOLDER
         }
         readOnly={false}
         onLoad={this.setEditor}
+        data-test="editor"
       />
     );
   }
 
   renderPreviewMode() {
     const { hasError } = this.state;
+
     return (
-      <ReactMarkdown
+      <SafeMarkdown
         source={
           hasError
             ? MARKDOWN_ERROR_MESSAGE
             : this.state.markdownSource || MARKDOWN_PLACE_HOLDER
         }
-        escapeHtml={false}
-        allowNode={isSafeMarkup}
       />
     );
   }
@@ -275,7 +282,6 @@ class Markdown extends React.PureComponent {
       depth,
       availableColumnCount,
       columnWidth,
-      onResizeStart,
       onResize,
       onResizeStop,
       handleComponentDrop,
@@ -315,10 +321,12 @@ class Markdown extends React.PureComponent {
             editMode={editMode}
           >
             <div
+              data-test="dashboard-markdown-editor"
               className={cx(
                 'dashboard-markdown',
                 isEditing && 'dashboard-markdown--editing',
               )}
+              id={component.id}
             >
               <ResizableContainer
                 id={component.id}
@@ -331,16 +339,15 @@ class Markdown extends React.PureComponent {
                 minWidthMultiple={GRID_MIN_COLUMN_COUNT}
                 minHeightMultiple={GRID_MIN_ROW_UNITS}
                 maxWidthMultiple={availableColumnCount + widthMultiple}
-                onResizeStart={onResizeStart}
+                onResizeStart={this.handleResizeStart}
                 onResize={onResize}
                 onResizeStop={onResizeStop}
-                // disable resize when editing because if state is not synced
-                // with props it will reset the editor text to whatever props is
                 editMode={isFocused ? false : editMode}
               >
                 <div
                   ref={dragSourceRef}
                   className="dashboard-component dashboard-component-chart-holder"
+                  data-test="dashboard-component-chart-holder"
                 >
                   {editMode && isEditing
                     ? this.renderEditMode()

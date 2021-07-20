@@ -18,8 +18,11 @@
  */
 import React from 'react';
 import PropTypes from 'prop-types';
+import cx from 'classnames';
+import { useTheme } from '@superset-ui/core';
+import { useSelector } from 'react-redux';
 
-import FilterIndicators from '../../containers/FilterIndicators';
+import { getChartIdsInFilterScope } from 'src/dashboard/util/activeDashboardFilters';
 import Chart from '../../containers/Chart';
 import AnchorLink from '../../../components/AnchorLink';
 import DeleteComponentButton from '../DeleteComponentButton';
@@ -28,13 +31,13 @@ import HoverMenu from '../menu/HoverMenu';
 import ResizableContainer from '../resizable/ResizableContainer';
 import getChartAndLabelComponentIdFromPath from '../../util/getChartAndLabelComponentIdFromPath';
 import { componentShape } from '../../util/propShapes';
-import { ROW_TYPE, COLUMN_TYPE } from '../../util/componentTypes';
+import { COLUMN_TYPE, ROW_TYPE } from '../../util/componentTypes';
 
 import {
-  GRID_MIN_COLUMN_COUNT,
-  GRID_MIN_ROW_UNITS,
   GRID_BASE_UNIT,
   GRID_GUTTER_SIZE,
+  GRID_MIN_COLUMN_COUNT,
+  GRID_MIN_ROW_UNITS,
 } from '../../util/constants';
 
 const CHART_MARGIN = 32;
@@ -50,6 +53,8 @@ const propTypes = {
   editMode: PropTypes.bool.isRequired,
   directPathToChild: PropTypes.arrayOf(PropTypes.string),
   directPathLastUpdated: PropTypes.number,
+  focusedFilterScope: PropTypes.object,
+  fullSizeChartId: PropTypes.oneOf([PropTypes.number, null]),
 
   // grid related
   availableColumnCount: PropTypes.number.isRequired,
@@ -62,12 +67,90 @@ const propTypes = {
   deleteComponent: PropTypes.func.isRequired,
   updateComponents: PropTypes.func.isRequired,
   handleComponentDrop: PropTypes.func.isRequired,
+  setFullSizeChartId: PropTypes.func.isRequired,
 };
 
 const defaultProps = {
   directPathToChild: [],
   directPathLastUpdated: 0,
 };
+
+/**
+ * Selects the chart scope of the filter input that has focus.
+ *
+ * @returns {{chartId: number, scope: { scope: string[], immune: string[] }} | null }
+ * the scope of the currently focused filter, if any
+ */
+function selectFocusedFilterScope(dashboardState, dashboardFilters) {
+  if (!dashboardState.focusedFilterField) return null;
+  const { chartId, column } = dashboardState.focusedFilterField;
+  return {
+    chartId,
+    scope: dashboardFilters[chartId].scopes[column],
+  };
+}
+
+/**
+ * Renders any styles necessary to highlight the chart's relationship to the focused filter.
+ *
+ * If there is no focused filter scope (i.e. most of the time), this will be just a pass-through.
+ *
+ * If the chart is outside the scope of the focused filter, dims the chart.
+ *
+ * If the chart is in the scope of the focused filter,
+ * renders a highlight around the chart.
+ *
+ * If ChartHolder were a function component, this could be implemented as a hook instead.
+ */
+const FilterFocusHighlight = React.forwardRef(
+  ({ chartId, ...otherProps }, ref) => {
+    const theme = useTheme();
+
+    const nativeFilters = useSelector(state => state.nativeFilters);
+    const dashboardState = useSelector(state => state.dashboardState);
+    const dashboardFilters = useSelector(state => state.dashboardFilters);
+    const focusedFilterScope = selectFocusedFilterScope(
+      dashboardState,
+      dashboardFilters,
+    );
+    const focusedNativeFilterId = nativeFilters.focusedFilterId;
+    if (!(focusedFilterScope || focusedNativeFilterId))
+      return <div ref={ref} {...otherProps} />;
+
+    // we use local styles here instead of a conditionally-applied class,
+    // because adding any conditional class to this container
+    // causes performance issues in Chrome.
+
+    // default to the "de-emphasized" state
+    const unfocusedChartStyles = { opacity: 0.3, pointerEvents: 'none' };
+    const focusedChartStyles = {
+      borderColor: theme.colors.primary.light2,
+      opacity: 1,
+      boxShadow: `0px 0px ${theme.gridUnit * 2}px ${theme.colors.primary.base}`,
+      pointerEvents: 'auto',
+    };
+
+    if (focusedNativeFilterId) {
+      if (
+        nativeFilters.filters[focusedNativeFilterId]?.chartsInScope?.includes(
+          chartId,
+        )
+      ) {
+        return <div ref={ref} style={focusedChartStyles} {...otherProps} />;
+      }
+    } else if (
+      chartId === focusedFilterScope.chartId ||
+      getChartIdsInFilterScope({
+        filterScope: focusedFilterScope.scope,
+      }).includes(chartId)
+    ) {
+      return <div ref={ref} style={focusedChartStyles} {...otherProps} />;
+    }
+
+    // inline styles are used here due to a performance issue when adding/changing a class, which causes a reflow
+    return <div ref={ref} style={unfocusedChartStyles} {...otherProps} />;
+  },
+);
 
 class ChartHolder extends React.Component {
   static renderInFocusCSS(columnName) {
@@ -108,7 +191,6 @@ class ChartHolder extends React.Component {
       outlinedComponentId: null,
       outlinedColumnName: null,
       directPathLastUpdated: 0,
-      isFullSize: false,
     };
 
     this.handleChangeFocus = this.handleChangeFocus.bind(this);
@@ -163,7 +245,10 @@ class ChartHolder extends React.Component {
   }
 
   handleToggleFullSize() {
-    this.setState(prevState => ({ isFullSize: !prevState.isFullSize }));
+    const { component, fullSizeChartId, setFullSizeChartId } = this.props;
+    const { chartId } = component.meta;
+    const isFullSize = fullSizeChartId === chartId;
+    setFullSizeChartId(isFullSize ? null : chartId);
   }
 
   render() {
@@ -182,7 +267,11 @@ class ChartHolder extends React.Component {
       editMode,
       isComponentVisible,
       dashboardId,
+      fullSizeChartId,
     } = this.props;
+
+    const { chartId } = component.meta;
+    const isFullSize = fullSizeChartId === chartId;
 
     // inherit the size of parent columns
     const widthMultiple =
@@ -193,9 +282,9 @@ class ChartHolder extends React.Component {
     let chartWidth = 0;
     let chartHeight = 0;
 
-    if (this.state.isFullSize) {
-      chartWidth = document.body.clientWidth - CHART_MARGIN;
-      chartHeight = document.body.clientHeight - CHART_MARGIN;
+    if (isFullSize) {
+      chartWidth = window.innerWidth - CHART_MARGIN;
+      chartHeight = window.innerHeight - CHART_MARGIN;
     } else {
       chartWidth = Math.floor(
         widthMultiple * columnWidth +
@@ -235,11 +324,16 @@ class ChartHolder extends React.Component {
             onResizeStop={onResizeStop}
             editMode={editMode}
           >
-            <div
+            <FilterFocusHighlight
+              chartId={chartId}
               ref={dragSourceRef}
-              className={`dashboard-component dashboard-component-chart-holder ${
-                this.state.outlinedComponentId ? 'fade-in' : 'fade-out'
-              } ${this.state.isFullSize ? 'full-size' : ''}`}
+              data-test="dashboard-component-chart-holder"
+              className={cx(
+                'dashboard-component',
+                'dashboard-component-chart-holder',
+                this.state.outlinedComponentId ? 'fade-in' : 'fade-out',
+                isFullSize && 'full-size',
+              )}
             >
               {!editMode && (
                 <AnchorLink
@@ -263,19 +357,18 @@ class ChartHolder extends React.Component {
                 updateSliceName={this.handleUpdateSliceName}
                 isComponentVisible={isComponentVisible}
                 handleToggleFullSize={this.handleToggleFullSize}
-                isFullSize={this.state.isFullSize}
+                isFullSize={isFullSize}
               />
-              {!editMode && (
-                <FilterIndicators chartId={component.meta.chartId} />
-              )}
               {editMode && (
                 <HoverMenu position="top">
-                  <DeleteComponentButton
-                    onDelete={this.handleDeleteComponent}
-                  />
+                  <div data-test="dashboard-delete-component-button">
+                    <DeleteComponentButton
+                      onDelete={this.handleDeleteComponent}
+                    />
+                  </div>
                 </HoverMenu>
               )}
-            </div>
+            </FilterFocusHighlight>
 
             {dropIndicatorProps && <div {...dropIndicatorProps} />}
           </ResizableContainer>

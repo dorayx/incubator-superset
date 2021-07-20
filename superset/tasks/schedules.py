@@ -14,8 +14,11 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
-"""Utility functions used across Superset"""
+"""
+DEPRECATION NOTICE: this module is deprecated as of v1.0.0.
+It will be removed in future versions of Superset. Please
+migrate to the new scheduler: `superset.tasks.scheduler`.
+"""
 
 import logging
 import time
@@ -34,7 +37,7 @@ from typing import (
     TYPE_CHECKING,
     Union,
 )
-from urllib.error import URLError  # pylint: disable=ungrouped-imports
+from urllib.error import URLError
 
 import croniter
 import simplejson as json
@@ -42,7 +45,6 @@ from celery.app.task import Task
 from dateutil.tz import tzlocal
 from flask import current_app, render_template, url_for
 from flask_babel import gettext as __
-from retry.api import retry_call
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver import chrome, firefox
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -66,13 +68,13 @@ from superset.tasks.alerts.validator import get_validator_function
 from superset.tasks.slack_util import deliver_slack_msg
 from superset.utils.celery import session_scope
 from superset.utils.core import get_email_address_list, send_email_smtp
+from superset.utils.retries import retry_call
 from superset.utils.screenshots import ChartScreenshot, WebDriverProxy
 from superset.utils.urls import get_url_path
 
 # pylint: disable=too-few-public-methods
 
 if TYPE_CHECKING:
-    # pylint: disable=unused-import
     from flask_appbuilder.security.sqla.models import User
     from werkzeug.datastructures import TypeConversionDict
 
@@ -228,7 +230,7 @@ def destroy_webdriver(
     # This is some very flaky code in selenium. Hence the retries
     # and catch-all exceptions
     try:
-        retry_call(driver.close, tries=2)
+        retry_call(driver.close, max_tries=2)
     except Exception:  # pylint: disable=broad-except
         pass
     try:
@@ -269,7 +271,10 @@ def deliver_dashboard(  # pylint: disable=too-many-locals
         # This is buggy in certain selenium versions with firefox driver
         get_element = getattr(driver, "find_element_by_class_name")
         element = retry_call(
-            get_element, fargs=["grid-container"], tries=2, delay=EMAIL_PAGE_RENDER_WAIT
+            get_element,
+            fargs=["grid-container"],
+            max_tries=2,
+            interval=EMAIL_PAGE_RENDER_WAIT,
         )
 
         try:
@@ -386,7 +391,9 @@ def _get_slice_screenshot(slice_id: int, session: Session) -> ScreenshotData:
         "Superset.slice", user_friendly=True, slice_id=slice_obj.id,
     )
 
-    user = security_manager.find_user(current_app.config["THUMBNAIL_SELENIUM_USER"])
+    user = security_manager.get_user_by_username(
+        current_app.config["THUMBNAIL_SELENIUM_USER"], session=session
+    )
     image_data = screenshot.compute_and_cache(
         user=user, cache=thumbnail_cache, force=True,
     )
@@ -416,8 +423,8 @@ def _get_slice_visualization(
     element = retry_call(
         driver.find_element_by_class_name,
         fargs=["chart-container"],
-        tries=2,
-        delay=EMAIL_PAGE_RENDER_WAIT,
+        max_tries=2,
+        interval=EMAIL_PAGE_RENDER_WAIT,
     )
 
     try:
@@ -485,8 +492,8 @@ def deliver_slice(  # pylint: disable=too-many-arguments
     bind=True,
     soft_time_limit=config["EMAIL_ASYNC_TIME_LIMIT_SEC"],
 )
-def schedule_email_report(  # pylint: disable=unused-argument
-    task: Task,
+def schedule_email_report(
+    _task: Task,
     report_type: ScheduleType,
     schedule_id: int,
     recipients: Optional[str] = None,
@@ -534,15 +541,14 @@ def schedule_email_report(  # pylint: disable=unused-argument
 @celery_app.task(
     name="alerts.run_query",
     bind=True,
-    soft_time_limit=config["EMAIL_ASYNC_TIME_LIMIT_SEC"],
-    # TODO: find cause of https://github.com/apache/incubator-superset/issues/10530
+    # TODO: find cause of https://github.com/apache/superset/issues/10530
     # and remove retry
     autoretry_for=(NoSuchColumnError, ResourceClosedError,),
-    retry_kwargs={"max_retries": 5},
+    retry_kwargs={"max_retries": 1},
     retry_backoff=True,
 )
-def schedule_alert_query(  # pylint: disable=unused-argument
-    task: Task,
+def schedule_alert_query(
+    _task: Task,
     report_type: ScheduleType,
     schedule_id: int,
     recipients: Optional[str] = None,
@@ -592,15 +598,13 @@ def deliver_alert(
     recipients = recipients or alert.recipients
     slack_channel = slack_channel or alert.slack_channel
     validation_error_message = (
-        str(alert.observations[-1].value) + " " + alert.validators[0].pretty_config
-        if alert.validators
-        else ""
+        str(alert.observations[-1].value) + " " + alert.pretty_config
     )
 
     if alert.slice:
         alert_content = AlertContent(
             alert.label,
-            alert.sql_observer[0].sql,
+            alert.sql,
             str(alert.observations[-1].value),
             validation_error_message,
             _get_url_path("AlertModelView.show", user_friendly=True, pk=alert_id),
@@ -610,7 +614,7 @@ def deliver_alert(
         # TODO: dashboard delivery!
         alert_content = AlertContent(
             alert.label,
-            alert.sql_observer[0].sql,
+            alert.sql,
             str(alert.observations[-1].value),
             validation_error_message,
             _get_url_path("AlertModelView.show", user_friendly=True, pk=alert_id),
@@ -744,12 +748,8 @@ def validate_observations(alert_id: int, label: str, session: Session) -> bool:
 
     logger.info("Validating observations for alert <%s:%s>", alert_id, label)
     alert = session.query(Alert).get(alert_id)
-    if not alert.validators:
-        return False
-
-    validator = alert.validators[0]
-    validate = get_validator_function(validator.validator_type)
-    return bool(validate and validate(alert.sql_observer[0], validator.config))
+    validate = get_validator_function(alert.validator_type)
+    return bool(validate and validate(alert, alert.validator_config))
 
 
 def next_schedules(
@@ -809,8 +809,8 @@ def schedule_window(
         for eta in next_schedules(
             schedule.crontab, schedule_start_at, stop_at, resolution=resolution
         ):
+            logging.info("Scheduled eta %s", eta)
             get_scheduler_action(report_type).apply_async(args, eta=eta)  # type: ignore
-            break
 
     return None
 
@@ -849,8 +849,8 @@ def schedule_alerts() -> None:
     resolution = 0
     now = datetime.utcnow()
     start_at = now - timedelta(
-        seconds=3600
-    )  # process any missed tasks in the past hour
+        seconds=300
+    )  # process any missed tasks in the past few minutes
     stop_at = now + timedelta(seconds=1)
     with session_scope(nullpool=True) as session:
         schedule_window(ScheduleType.alert, start_at, stop_at, resolution, session)

@@ -28,6 +28,8 @@ const footerStyle = css`
   text-align: center;
   color: #ccc;
   padding: 10px;
+  height: 100%;
+  width: 100%;
 `;
 
 const copyrightStyle = css`
@@ -71,14 +73,14 @@ const LayoutFooter = () => (
     <div css={iconContainerStyle}>
       <div className="icons">
         <a
-          href="https://apache-superset.slack.com/join/shared_invite/zt-g8lpruog-HeqpgYrwdfrD5OYhlU7hPQ#/"
+          href="https://join.slack.com/t/apache-superset/shared_invite/zt-l5f5e0av-fyYu8tlfdqbMdz_sPLwUqQ"
           target="_blank"
           rel="noreferrer"
         >
           <SlackSquareOutlined className="icon" />
         </a>
         <a
-          href="https://github.com/apache/incubator-superset"
+          href="https://github.com/apache/superset"
           target="_blank"
           rel="noreferrer"
         >
@@ -103,50 +105,73 @@ const LayoutFooter = () => (
       {new Date().getFullYear()}
       ,
       <a href="http://www.apache.org/" target="_blank" rel="noreferrer">
-          &nbsp;The Apache Software Fountation
+        &nbsp;The Apache Software Foundation
       </a>
       , &nbsp;Licensed under the Apache
       <a
-        href="https://www.apache.org/licenses/"
+        href="https://apache.org/licenses/LICENSE-2.0"
         target="_blank"
         rel="noreferrer"
       >
-          &nbsp;License.
+        &nbsp;License.
       </a>
       {' '}
       <div>
-        Disclaimer: Apache Superset is an effort undergoing incubation at The
-        Apache Software Foundation (ASF), sponsored by the Apache Incubator.
-        Incubation is required of all newly accepted projects until a further
-        review indicates that the infrastructure, communications, and decision
-        making process have stabilized in a manner consistent with other
-        successful ASF projects. While incubation status is not necessarily a
-        reflection of the completeness or stability of the code, it does
-        indicate that the project has yet to be fully endorsed by the ASF.
+        Apache Superset, Apache, Superset, the Superset logo, and the Apache
+        feather logo are either registered trademarks or trademarks of The
+        Apache Software Foundation. All other products or name brands
+        are trademarks of their respective holders, including The Apache
+        Software Foundation.
       </div>
     </div>
     <div css={apacheLinksStyle} className="apacheLinks">
+      <a
+        href="https://www.apache.org/"
+        target="_blank"
+        rel="noreferrer"
+      >
+        Apache Software Foundation
+      </a>
+      resources
+      <br />
       <a
         href="https://www.apache.org/security/"
         target="_blank"
         rel="noreferrer"
       >
-        Security &nbsp;|
+        Security
       </a>
+      {' | '}
       <a
         href="https://www.apache.org/foundation/sponsorship.html"
         target="_blank"
         rel="noreferrer"
       >
-        Donate &nbsp;|
+        Donate
       </a>
-
+      {' | '}
       <a
         href="https://www.apache.org/foundation/thanks.html"
         target="_blank"
         rel="noreferrer"
       >
         Thanks
+      </a>
+      {' | '}
+      <a
+        href="https://apache.org/events/current-event"
+        target="_blank"
+        rel="noreferrer"
+      >
+        Events
+      </a>
+      {' | '}
+      <a
+        href="https://apache.org/licenses/"
+        target="_blank"
+        rel="noreferrer"
+      >
+        License
       </a>
     </div>
   </Footer>
